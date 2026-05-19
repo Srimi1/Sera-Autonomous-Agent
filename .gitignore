@@ -1,0 +1,131 @@
+# --- Secrets & environment ---
+.env
+.env.*
+*.env
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+secrets/
+credentials/
+*credentials*.json
+*service-account*.json
+.netrc
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.iCloud
+*.icloud
+
+# --- Editors / IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.vim/
+.cursor/
+.aider*
+.claude/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.venv/
+venv/
+env/
+ENV/
+.tox/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.hypothesis/
+
+# --- Node.js ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.yarn/
+.pnpm-store/
+
+# --- Rust / Tauri ---
+target/
+Cargo.lock
+**/*.rs.bk
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# --- Databases & local data ---
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Sera-specific runtime data ---
+~/.sera/
+.sera/
+sera-data/
+vault/
+skills-cache/
+
+# --- Build artifacts ---
+*.exe
+*.dll
+*.dmg
+*.app/
+*.deb
+*.rpm
+*.AppImage
+*.tar.gz
+
+# --- Misc ---
+.cache/
+tmp/
+temp/
+
+# --- Ruflo / Claude-Flow runtime artifacts ---
+.claude-flow/
+ruvector.db
+*.ruvector
+.swarm/
+.hive-mind/
+.ruflo/
