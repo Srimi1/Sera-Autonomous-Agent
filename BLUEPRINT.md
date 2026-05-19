@@ -575,8 +575,8 @@ Composio handles OAuth, refresh, and rate limits. Sera just discovers and dispat
 ```yaml
 # ~/.sera/config.yaml
 identity:
-  name: "Srimi"
-  timezone: "Asia/Kolkata"
+  name: "<your-name>"
+  timezone: "<IANA-tz, e.g. Etc/UTC>"
 
 llm:
   profiles:
