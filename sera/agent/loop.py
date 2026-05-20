@@ -263,6 +263,7 @@ async def run_turn(
                 role="assistant",
                 content=assistant_text or None,
                 tool_calls=normalized_tcs,
+                finish_reason=finish_reason,
             )
         )
 

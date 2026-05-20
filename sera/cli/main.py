@@ -21,7 +21,7 @@ from sera.agent.loop import TokenSink, run_turn
 from sera.config import CONFIG_PATH, SESSIONS_DB, load, save
 from sera.llm.router import for_profile
 from sera.llm.secrets import get_key, set_key
-from sera.memory.session import Session
+from sera.memory.session import Session, recover_aborted_sessions
 from sera.safety.approval import CliApprovalGate
 from sera.safety.redact import redact
 from sera.tools.base import Permission
@@ -84,14 +84,21 @@ def list_tools_cmd() -> None:
 @main.command(name="sessions")
 @click.option("--limit", default=20, help="Max rows to show.")
 def list_sessions_cmd(limit: int) -> None:
-    """List recent sessions (most recently updated first)."""
+    """List recent sessions (most recently updated first).
+
+    Connecting via `Session._connect` (through `recover_aborted_sessions`)
+    runs the crash-recovery scan first so the displayed status column is
+    always current.
+    """
     if not SESSIONS_DB.exists():
         console.print("[dim]No sessions yet.[/dim]")
         return
+    # Run recovery first so dangling turns get flagged before we render.
+    recover_aborted_sessions()
     with sqlite3.connect(SESSIONS_DB) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT id, title, workspace, updated_at, "
+            "SELECT id, title, workspace, updated_at, last_status, "
             "(SELECT COUNT(*) FROM messages WHERE session_id = sessions.id) AS n "
             "FROM sessions ORDER BY updated_at DESC LIMIT ?",
             (limit,),
@@ -101,13 +108,25 @@ def list_sessions_cmd(limit: int) -> None:
         return
     table = Table(title="Sessions")
     table.add_column("id", style="bold")
+    table.add_column("status")
     table.add_column("updated")
     table.add_column("msgs", justify="right")
     table.add_column("workspace", overflow="fold")
     table.add_column("title")
     for r in rows:
         when = datetime.fromtimestamp(r["updated_at"]).strftime("%Y-%m-%d %H:%M")
-        table.add_row(r["id"], when, str(r["n"]), r["workspace"] or "", r["title"] or "")
+        status = r["last_status"] or "active"
+        status_cell = (
+            f"[yellow]{status}[/yellow]" if status == "aborted" else status
+        )
+        table.add_row(
+            r["id"],
+            status_cell,
+            when,
+            str(r["n"]),
+            r["workspace"] or "",
+            r["title"] or "",
+        )
     console.print(table)
 
 
