@@ -9,6 +9,7 @@ from sera.agent.budget import IterationBudget, MaxIterations
 from sera.agent.interrupt import InterruptToken, Interrupted
 from sera.context.compressor import FENCE, build_summarise_call, compact_session
 from sera.context.scrubber import StreamingContextScrubber, scrub
+from sera.context.tokenjuice import DEFAULT_COMPRESS_THRESHOLD, compress_sync
 from sera.context.tokens import estimate_messages
 from sera.llm.base import LLM, ContextOverflow
 from sera.llm.cache import freeze_system_prompt
@@ -75,8 +76,9 @@ def _sanitize_tool_output(text: str) -> str:
     tool result before persisting it or showing it to the LLM.
 
     Order matters: scrub spans first (removes whole blocks), then redact
-    secret patterns, then defuse any literal FENCE string an attacker might
-    have embedded in plain text.
+    secret patterns, defuse any literal FENCE, then — for outputs above the
+    TokenJuice threshold — run the rule-based compressor. Compression runs
+    last so HTML/URL/table rewrites can't reintroduce a scrubbed span.
     """
     if not text:
         return text
@@ -84,6 +86,8 @@ def _sanitize_tool_output(text: str) -> str:
     out = redact(out)
     if FENCE in out:
         out = out.replace(FENCE, "[fence-redacted]")
+    if len(out) >= DEFAULT_COMPRESS_THRESHOLD:
+        out = compress_sync(out).text
     return out
 
 
