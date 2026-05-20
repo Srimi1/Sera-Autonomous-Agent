@@ -1,0 +1,14 @@
+id: file_write_happy
+prompt: "write 'hello' to greeting.txt"
+script:
+  - tool_calls:
+      - id: tc_write_1
+        name: file_write
+        arguments:
+          path: greeting.txt
+          content: "hello"
+  - text: "Saved greeting.txt."
+expect:
+  substring: "Saved"
+  tool_calls: [file_write]
+tags: [filesystem]

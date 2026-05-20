@@ -1,0 +1,22 @@
+id: iterate_then_finalize
+prompt: "check both files and summarize"
+workspace_files:
+  a.txt: "alpha"
+  b.txt: "beta"
+script:
+  - tool_calls:
+      - id: tc_it_a
+        name: file_read
+        arguments:
+          path: a.txt
+  - tool_calls:
+      - id: tc_it_b
+        name: file_read
+        arguments:
+          path: b.txt
+  - text: "Summary — a.txt: alpha; b.txt: beta."
+expect:
+  substring: "Summary"
+  tool_calls: [file_read]
+  min_iterations: 3
+tags: [filesystem, multi-step]

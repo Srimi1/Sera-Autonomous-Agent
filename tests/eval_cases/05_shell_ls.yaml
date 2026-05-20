@@ -1,0 +1,16 @@
+id: shell_ls_safe
+prompt: "list files in the workspace"
+workspace_files:
+  a.txt: "x"
+  b.txt: "y"
+script:
+  - tool_calls:
+      - id: tc_ls_1
+        name: shell_run
+        arguments:
+          command: "ls"
+  - text: "Found a.txt and b.txt."
+expect:
+  substring: "a.txt"
+  tool_calls: [shell_run]
+tags: [shell]

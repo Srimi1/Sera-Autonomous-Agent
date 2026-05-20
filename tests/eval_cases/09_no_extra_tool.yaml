@@ -1,0 +1,9 @@
+id: respect_min_tools
+prompt: "give me a one-line definition of recursion"
+script:
+  - text: "Recursion: a function that calls itself, with a base case to stop."
+expect:
+  substring: "recursion"
+  forbid_tool_calls: [shell_run, file_read, file_write, web_search]
+  max_iterations: 1
+tags: [no-tools]

@@ -1,0 +1,22 @@
+id: read_then_write
+prompt: "read note.txt and append a line saying 'done' to it"
+workspace_files:
+  note.txt: "first line\n"
+script:
+  - tool_calls:
+      - id: tc_ms_read
+        name: file_read
+        arguments:
+          path: note.txt
+  - tool_calls:
+      - id: tc_ms_write
+        name: file_write
+        arguments:
+          path: note.txt
+          content: "first line\ndone\n"
+  - text: "Appended 'done' to note.txt."
+expect:
+  substring: "Appended"
+  tool_calls: [file_read, file_write]
+  min_iterations: 3
+tags: [filesystem, multi-step]

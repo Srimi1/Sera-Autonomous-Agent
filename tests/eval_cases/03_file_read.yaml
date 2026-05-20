@@ -1,0 +1,15 @@
+id: file_read_happy
+prompt: "read notes.txt and tell me the first line"
+workspace_files:
+  notes.txt: "alpha\nbeta\ngamma\n"
+script:
+  - tool_calls:
+      - id: tc_read_1
+        name: file_read
+        arguments:
+          path: notes.txt
+  - text: "First line: alpha."
+expect:
+  substring: "alpha"
+  tool_calls: [file_read]
+tags: [filesystem]

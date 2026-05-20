@@ -1,0 +1,7 @@
+id: greet
+prompt: "hello sera"
+script:
+  - text: "Hi! How can I help today?"
+expect:
+  substring: "Hi"
+tags: [smoke, no-tools]

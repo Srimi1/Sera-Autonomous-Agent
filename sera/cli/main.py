@@ -131,6 +131,104 @@ def list_sessions_cmd(limit: int) -> None:
 
 
 @main.group()
+def eval() -> None:  # noqa: A001 — `eval` is the user-facing verb here
+    """Golden-conversation harness — release gate."""
+
+
+def _default_cases_dir() -> Path:
+    """Pick the first plausible cases dir for the eval CLI.
+
+    Order:
+      1. `tests/eval_cases/` under CWD (running from repo root in dev).
+      2. `tests/eval_cases/` under the package source tree (editable install).
+    """
+    cwd_dir = Path.cwd() / "tests" / "eval_cases"
+    if cwd_dir.is_dir():
+        return cwd_dir
+    pkg_root = Path(__file__).resolve().parents[2]
+    return pkg_root / "tests" / "eval_cases"
+
+
+@eval.command(name="run")
+@click.option("--cases", "cases_dir", default=None, type=click.Path(path_type=Path),
+              help="Directory of *.yaml eval cases. Defaults to ./tests/eval_cases.")
+@click.option("--no-store", is_flag=True, default=False,
+              help="Run without persisting telemetry.")
+def eval_run_cmd(cases_dir: Path | None, no_store: bool) -> None:
+    """Run every eval case under `cases_dir` with the stub LLM."""
+    from sera.eval import load_cases, run_cases as _run_cases
+    from sera.eval.telemetry import TelemetryStore
+
+    target = (cases_dir or _default_cases_dir()).resolve()
+    if not target.is_dir():
+        console.print(f"[red]Cases dir not found: {target}[/red]")
+        sys.exit(2)
+    cases = load_cases(target)
+    if not cases:
+        console.print(f"[yellow]No cases under {target}[/yellow]")
+        return
+
+    store = None if no_store else TelemetryStore()
+    report = _run_cases(cases, telemetry=store, profile="stub")
+
+    table = Table(title=f"Eval run {report.run_id} — {target}")
+    table.add_column("case", style="bold")
+    table.add_column("pass")
+    table.add_column("ms", justify="right")
+    table.add_column("iters", justify="right")
+    table.add_column("tools")
+    table.add_column("reason", overflow="fold")
+    for r in report.results:
+        mark = "[green]✓[/green]" if r.passed else "[red]✗[/red]"
+        table.add_row(
+            r.case_id,
+            mark,
+            str(r.latency_ms),
+            str(r.iterations),
+            ",".join(r.tool_calls) or "-",
+            r.reason or "",
+        )
+    console.print(table)
+    console.print(f"[bold]{report.n_pass}/{len(report.results)} passed.[/bold]")
+    if report.n_fail:
+        sys.exit(1)
+
+
+@eval.command(name="bench")
+@click.option("--cases", "cases_dir", default=None, type=click.Path(path_type=Path))
+@click.pass_context
+def eval_bench_cmd(ctx: click.Context, cases_dir: Path | None) -> None:
+    """Alias for `eval run` — same stub harness, named for muscle memory."""
+    ctx.invoke(eval_run_cmd, cases_dir=cases_dir, no_store=False)
+
+
+@eval.command(name="show")
+@click.option("--limit", default=5, help="Most recent runs to display.")
+def eval_show_cmd(limit: int) -> None:
+    """Print the most recent eval runs from the telemetry store."""
+    from sera.eval.telemetry import TelemetryStore
+
+    store = TelemetryStore()
+    runs = store.recent_runs(limit=limit)
+    if not runs:
+        console.print("[dim]No eval runs yet — try `sera eval run`.[/dim]")
+        return
+    table = Table(title="Recent eval runs")
+    table.add_column("run", style="bold")
+    table.add_column("started")
+    table.add_column("profile")
+    table.add_column("pass", justify="right")
+    table.add_column("fail", justify="right")
+    for r in runs:
+        started = datetime.fromtimestamp(r["started_at"]).strftime("%Y-%m-%d %H:%M:%S")
+        table.add_row(
+            r["id"], started, r["profile"] or "-",
+            str(r["n_pass"]), str(r["n_fail"]),
+        )
+    console.print(table)
+
+
+@main.group()
 def route() -> None:
     """Routing + provider telemetry (cache hits, token totals)."""
 

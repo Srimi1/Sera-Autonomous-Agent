@@ -1,0 +1,14 @@
+id: memory_store_basic
+prompt: "remember that my favourite color is teal"
+script:
+  - tool_calls:
+      - id: tc_mem_1
+        name: memory_store
+        arguments:
+          content: "favourite_color=teal"
+          tags: [preference]
+  - text: "Saved your favourite color."
+expect:
+  substring: "Saved"
+  tool_calls: [memory_store]
+tags: [memory]
