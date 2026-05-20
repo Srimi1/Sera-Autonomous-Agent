@@ -5,6 +5,8 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from sera.agent.budget import IterationBudget, MaxIterations
+from sera.agent.interrupt import InterruptToken, Interrupted
 from sera.context.compressor import FENCE, build_summarise_call, compact_session
 from sera.context.scrubber import StreamingContextScrubber, scrub
 from sera.context.tokens import estimate_messages
@@ -25,6 +27,11 @@ SYSTEM_PROMPT = (
 )
 
 DEFAULT_MAX_ITERATIONS = 25
+
+GRACE_NOTICE = (
+    "[iteration budget exhausted — produce your final answer now in plain text. "
+    "Do not call any tools.]"
+)
 
 
 @dataclass
@@ -121,6 +128,8 @@ async def run_turn(
     sink: TokenSink | None = None,
     approval: ApprovalGate | None = None,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    budget: IterationBudget | None = None,
+    interrupt: InterruptToken | None = None,
     system_prompt: str = SYSTEM_PROMPT,
     approval_threshold: Permission = Permission.DANGEROUS,
     compaction_target_ratio: float = 0.8,
@@ -131,9 +140,15 @@ async def run_turn(
     approval_threshold: tool calls at this tier or above require approval.
     compaction_target_ratio: compact when current tokens exceed ratio * budget.
     compaction_aggressive_ratio: ratio used on retry after a ContextOverflow.
+    budget: shared IterationBudget across parent + future subagents. If None,
+        a fresh one is built from `max_iterations`.
+    interrupt: per-turn cancel token. If None, a fresh one is allocated (and
+        nothing will ever set it from outside).
     """
     sink = sink or _stdout_sink()
     approval = approval or AutoApproveGate(allow=False)
+    budget = budget or IterationBudget.of(max_iterations)
+    interrupt = interrupt or InterruptToken()
 
     # Freeze the system prompt on first turn; on resume, restore the frozen
     # prompt verbatim so Anthropic's prompt cache keeps hitting.
@@ -147,8 +162,23 @@ async def run_turn(
         tool_schemas = [t.to_anthropic_schema() for t in all_tools()]
 
     final_text = ""
+    grace_mode = False
 
-    for _ in range(max_iterations):
+    while True:
+        interrupt.check()
+        try:
+            budget.consume()
+        except MaxIterations:
+            if budget.can_request_grace():
+                budget.request_grace()
+                budget.consume()
+                grace_mode = True
+                session.append(Message(role="user", content=GRACE_NOTICE))
+            else:
+                if not final_text:
+                    final_text = "[max iterations reached]"
+                break
+
         openai_messages = [m.to_openai() for m in session.messages]
         view = await _build_view(
             openai_messages, llm=llm, target_ratio=compaction_target_ratio,
@@ -160,11 +190,13 @@ async def run_turn(
         usage: dict[str, int] | None = None
         scrubber = StreamingContextScrubber()
 
+        active_tools = None if grace_mode else tool_schemas
+
         async def _consume(view_messages):
             nonlocal assistant_text, tool_calls, finish_reason, usage
             async for chunk in llm.stream(
                 messages=view_messages,
-                tools=tool_schemas,
+                tools=active_tools,
                 system=frozen_prompt,
             ):
                 if chunk.delta_text:
@@ -234,6 +266,12 @@ async def run_turn(
             sink.on_text("\n")
             break
 
+        if grace_mode:
+            # Grace turn must not request tools; if the model still emitted
+            # any (rare), drop them and treat the assistant text as final.
+            sink.on_text("\n")
+            break
+
         # Execute each tool call.
         for tc in tool_calls:
             call = ToolCall(
@@ -273,10 +311,6 @@ async def run_turn(
                     name=call.name,
                 )
             )
-
-        # Loop back to feed tool results to LLM.
-    else:
-        if not final_text:
-            final_text = "[max iterations reached]"
+            interrupt.check()
 
     return final_text

@@ -15,6 +15,8 @@ from rich.panel import Panel
 from rich.table import Table
 
 from sera import __version__
+from sera.agent.budget import IterationBudget
+from sera.agent.interrupt import InterruptToken, Interrupted, install_sigint
 from sera.agent.loop import TokenSink, run_turn
 from sera.config import CONFIG_PATH, SESSIONS_DB, load, save
 from sera.llm.router import for_profile
@@ -314,16 +316,26 @@ async def _repl(session, llm, sink, approval, threshold, max_iters) -> None:
             continue
 
         console.print("[bold green]sera ›[/bold green] ", end="")
+        budget = IterationBudget.of(max_iters)
+        token = InterruptToken()
         try:
-            await run_turn(
-                session,
-                msg,
-                llm,
-                sink=sink,
-                approval=approval,
-                approval_threshold=threshold,
-                max_iterations=max_iters,
-            )
+            with install_sigint(token):
+                await run_turn(
+                    session,
+                    msg,
+                    llm,
+                    sink=sink,
+                    approval=approval,
+                    approval_threshold=threshold,
+                    budget=budget,
+                    interrupt=token,
+                )
+        except Interrupted:
+            console.print("\n[yellow][interrupted][/yellow]")
+        except KeyboardInterrupt:
+            # Second Ctrl+C during the turn — exit the REPL cleanly.
+            console.print("\n[dim]bye.[/dim]")
+            return
         except Exception as e:  # noqa: BLE001 — show error and continue REPL
             console.print(f"\n[red]Turn failed: {type(e).__name__}: {e}[/red]")
 
