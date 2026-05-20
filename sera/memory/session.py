@@ -17,7 +17,13 @@ CREATE TABLE IF NOT EXISTS sessions (
     title TEXT,
     workspace TEXT,
     created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    system_prompt TEXT,
+    system_prompt_hash TEXT,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -90,8 +96,34 @@ def _connect(path: Path | None = None) -> sqlite3.Connection:
         conn.executescript(_SCHEMA)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
+        _migrate_sessions_columns(conn)
         _INITIALIZED.add(key)
     return conn
+
+
+_SESSIONS_COLUMNS_TO_ADD: tuple[tuple[str, str], ...] = (
+    ("system_prompt", "TEXT"),
+    ("system_prompt_hash", "TEXT"),
+    ("cache_read_tokens", "INTEGER NOT NULL DEFAULT 0"),
+    ("cache_creation_tokens", "INTEGER NOT NULL DEFAULT 0"),
+    ("input_tokens", "INTEGER NOT NULL DEFAULT 0"),
+    ("output_tokens", "INTEGER NOT NULL DEFAULT 0"),
+)
+
+
+def _migrate_sessions_columns(conn: sqlite3.Connection) -> None:
+    """Add prompt-cache + usage columns to existing `sessions` tables.
+
+    Sqlite lacks `ALTER TABLE ADD COLUMN IF NOT EXISTS`; introspect via
+    PRAGMA and only add the missing columns. Idempotent — re-runs are no-ops.
+    """
+    existing = {
+        r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()
+    }
+    for name, decl in _SESSIONS_COLUMNS_TO_ADD:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {decl}")
+    conn.commit()
 
 
 class Session:
@@ -199,6 +231,52 @@ class Session:
             (now, self.id),
         )
         self.conn.commit()
+
+    def record_usage(
+        self,
+        *,
+        input_tokens: int,
+        output_tokens: int,
+        cache_read_tokens: int,
+        cache_creation_tokens: int,
+    ) -> None:
+        """Accumulate per-turn token counts onto the sessions row.
+
+        Called once per assistant turn after the LLM stream completes.
+        Sums are running totals for the lifetime of the session.
+        """
+        self.conn.execute(
+            "UPDATE sessions SET "
+            "input_tokens = input_tokens + ?, "
+            "output_tokens = output_tokens + ?, "
+            "cache_read_tokens = cache_read_tokens + ?, "
+            "cache_creation_tokens = cache_creation_tokens + ? "
+            "WHERE id = ?",
+            (
+                int(input_tokens),
+                int(output_tokens),
+                int(cache_read_tokens),
+                int(cache_creation_tokens),
+                self.id,
+            ),
+        )
+        self.conn.commit()
+
+    def usage_totals(self) -> dict[str, int]:
+        """Read back the running totals for this session."""
+        row = self.conn.execute(
+            "SELECT input_tokens, output_tokens, cache_read_tokens, "
+            "cache_creation_tokens FROM sessions WHERE id = ?",
+            (self.id,),
+        ).fetchone()
+        if row is None:
+            return {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_creation_tokens": 0,
+            }
+        return {k: int(row[k] or 0) for k in row.keys()}
 
     def search(
         self,

@@ -21,11 +21,16 @@ class ContextOverflow(LLMError):
 
 @dataclass
 class StreamChunk:
-    """One streaming event from a provider."""
+    """One streaming event from a provider.
+
+    `usage` is set at most once per stream — on the final event — and carries
+    the provider's reported token counts. None on intermediate chunks.
+    """
 
     delta_text: str = ""
     tool_call_delta: dict[str, Any] | None = None
     finish_reason: str | None = None
+    usage: dict[str, int] | None = None
 
 
 @dataclass

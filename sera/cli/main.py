@@ -109,6 +109,70 @@ def list_sessions_cmd(limit: int) -> None:
     console.print(table)
 
 
+@main.group()
+def route() -> None:
+    """Routing + provider telemetry (cache hits, token totals)."""
+
+
+@route.command(name="stats")
+@click.option("--limit", default=20, help="Max sessions to show.")
+@click.option("--session-id", default=None, help="Show one session only.")
+def route_stats_cmd(limit: int, session_id: str | None) -> None:
+    """Show prompt-cache hit ratio per session.
+
+    Reads token totals accumulated by the agent loop (Anthropic only —
+    OpenAI's usage block doesn't expose cache_read tokens). A session with
+    `cache_read > 0` confirms the freeze-at-start cache is working.
+    """
+    if not SESSIONS_DB.exists():
+        console.print("[dim]No sessions yet.[/dim]")
+        return
+    with sqlite3.connect(SESSIONS_DB) as conn:
+        conn.row_factory = sqlite3.Row
+        if session_id:
+            rows = conn.execute(
+                "SELECT id, title, input_tokens, output_tokens, "
+                "cache_read_tokens, cache_creation_tokens "
+                "FROM sessions WHERE id = ?",
+                (session_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, title, input_tokens, output_tokens, "
+                "cache_read_tokens, cache_creation_tokens "
+                "FROM sessions ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    if not rows:
+        console.print("[dim]No sessions yet.[/dim]")
+        return
+    table = Table(title="Prompt-cache stats")
+    table.add_column("session", style="bold")
+    table.add_column("in", justify="right")
+    table.add_column("out", justify="right")
+    table.add_column("cache-read", justify="right")
+    table.add_column("cache-write", justify="right")
+    table.add_column("hit%", justify="right")
+    table.add_column("title", overflow="fold")
+    for r in rows:
+        in_t = int(r["input_tokens"] or 0)
+        out_t = int(r["output_tokens"] or 0)
+        cr = int(r["cache_read_tokens"] or 0)
+        cw = int(r["cache_creation_tokens"] or 0)
+        denom = in_t + cr + cw
+        hit = (cr / denom * 100) if denom else 0.0
+        table.add_row(
+            r["id"],
+            f"{in_t}",
+            f"{out_t}",
+            f"{cr}",
+            f"{cw}",
+            f"{hit:.1f}",
+            r["title"] or "",
+        )
+    console.print(table)
+
+
 @main.command()
 @click.option("--profile", default=None, help="LLM profile (reasoning|fast).")
 @click.option("--workspace", default=None, help="Workspace root for tools.")

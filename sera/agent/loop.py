@@ -9,6 +9,7 @@ from sera.context.compressor import FENCE, build_summarise_call, compact_session
 from sera.context.scrubber import StreamingContextScrubber, scrub
 from sera.context.tokens import estimate_messages
 from sera.llm.base import LLM, ContextOverflow
+from sera.llm.cache import freeze_system_prompt
 from sera.memory.session import Message, Session
 from sera.safety.approval import ApprovalGate, AutoApproveGate
 from sera.safety.redact import redact
@@ -134,6 +135,10 @@ async def run_turn(
     sink = sink or _stdout_sink()
     approval = approval or AutoApproveGate(allow=False)
 
+    # Freeze the system prompt on first turn; on resume, restore the frozen
+    # prompt verbatim so Anthropic's prompt cache keeps hitting.
+    frozen_prompt = freeze_system_prompt(session, system_prompt)
+
     session.append(Message(role="user", content=user_msg))
 
     if llm.name == "openai":
@@ -152,14 +157,15 @@ async def run_turn(
         assistant_text = ""
         tool_calls: list[dict[str, Any]] = []
         finish_reason = "stop"
+        usage: dict[str, int] | None = None
         scrubber = StreamingContextScrubber()
 
         async def _consume(view_messages):
-            nonlocal assistant_text, tool_calls, finish_reason
+            nonlocal assistant_text, tool_calls, finish_reason, usage
             async for chunk in llm.stream(
                 messages=view_messages,
                 tools=tool_schemas,
-                system=system_prompt,
+                system=frozen_prompt,
             ):
                 if chunk.delta_text:
                     clean = scrubber.feed(chunk.delta_text)
@@ -169,6 +175,8 @@ async def run_turn(
                     tool_calls.append(chunk.tool_call_delta)
                 if chunk.finish_reason:
                     finish_reason = chunk.finish_reason
+                if chunk.usage:
+                    usage = chunk.usage
             tail = scrubber.flush()
             if tail:
                 assistant_text += tail
@@ -184,8 +192,17 @@ async def run_turn(
             assistant_text = ""
             tool_calls = []
             finish_reason = "stop"
+            usage = None
             scrubber = StreamingContextScrubber()
             await _consume(view)
+
+        if usage:
+            session.record_usage(
+                input_tokens=usage.get("input_tokens", 0),
+                output_tokens=usage.get("output_tokens", 0),
+                cache_read_tokens=usage.get("cache_read_input_tokens", 0),
+                cache_creation_tokens=usage.get("cache_creation_input_tokens", 0),
+            )
 
         # Persist assistant turn (OpenAI tool_calls schema). Arguments stored
         # as JSON; secret values inside arguments are redacted first.

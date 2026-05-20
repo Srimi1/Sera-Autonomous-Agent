@@ -5,6 +5,7 @@ import json
 from typing import Any, AsyncIterator
 
 from sera.llm.base import ContextOverflow, StreamChunk
+from sera.llm.cache import apply_cache_control_anthropic, parse_anthropic_usage
 from sera.llm.secrets import get_key
 
 
@@ -96,13 +97,21 @@ class AnthropicAdapter:
                     sys_text = m.get("content", "")
                     break
 
+        anth_messages = self._to_anthropic_messages(messages)
+        if sys_text:
+            system_blocks, anth_messages = apply_cache_control_anthropic(
+                sys_text, anth_messages
+            )
+        else:
+            system_blocks = []
+
         kwargs: dict[str, Any] = {
             "model": self.model,
-            "messages": self._to_anthropic_messages(messages),
+            "messages": anth_messages,
             "max_tokens": 4096,
         }
-        if sys_text:
-            kwargs["system"] = sys_text
+        if system_blocks:
+            kwargs["system"] = system_blocks
         if tools:
             kwargs["tools"] = tools
 
@@ -144,7 +153,16 @@ class AnthropicAdapter:
                                 }
                             )
                         final = await stream.get_final_message()
-                        yield StreamChunk(finish_reason=final.stop_reason or "stop")
+                        usage = parse_anthropic_usage(getattr(final, "usage", None))
+                        yield StreamChunk(
+                            finish_reason=final.stop_reason or "stop",
+                            usage={
+                                "input_tokens": usage.input_tokens,
+                                "output_tokens": usage.output_tokens,
+                                "cache_read_input_tokens": usage.cache_read_input_tokens,
+                                "cache_creation_input_tokens": usage.cache_creation_input_tokens,
+                            },
+                        )
         except Exception as e:  # noqa: BLE001 — normalize provider errors
             if _is_context_overflow_anthropic(e):
                 raise ContextOverflow(str(e)) from e
