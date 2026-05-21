@@ -100,6 +100,7 @@ class Chunk:
     summary: str
     confidence: float
     created_at: float
+    pii_tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -213,6 +214,7 @@ class MemoryTree:
                 last_accessed_at REAL,
                 merged_into INTEGER REFERENCES chunks(id),
                 merged_from TEXT,
+                pii_tags TEXT,
                 created_at REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source);
@@ -289,6 +291,8 @@ class MemoryTree:
             c.execute("ALTER TABLE chunks ADD COLUMN merged_into INTEGER")
         if "merged_from" not in existing:
             c.execute("ALTER TABLE chunks ADD COLUMN merged_from TEXT")
+        if "pii_tags" not in existing:
+            c.execute("ALTER TABLE chunks ADD COLUMN pii_tags TEXT")
 
         # Backfill chunks_fts. The triggers above only fire on future
         # writes — pre-existing chunks need an explicit rebuild via FTS5's
@@ -358,11 +362,16 @@ class MemoryTree:
 
         blob = _embedding_to_blob(embedding) if embedding is not None else None
         now_ts = float(now if now is not None else time.time())
+        from sera.memory.privacy import pii_kinds as _pii_kinds
+
+        tags = _pii_kinds(content)
+        tags_json = json.dumps(tags) if tags else None
         cur = self.conn.execute(
             "INSERT INTO chunks (source, content, summary, confidence, embedding, "
-            "freshness, last_accessed_at, created_at) "
-            "VALUES (?, ?, ?, ?, ?, 1.0, ?, ?)",
-            (source, content, summary, float(confidence), blob, now_ts, now_ts),
+            "freshness, last_accessed_at, pii_tags, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 1.0, ?, ?, ?)",
+            (source, content, summary, float(confidence), blob, now_ts,
+             tags_json, now_ts),
         )
         chunk_id = cur.lastrowid
         if self._vss and blob is not None:
@@ -399,6 +408,13 @@ class MemoryTree:
         if content is not None:
             sets.append("content = ?")
             params.append(content)
+            # Re-tag PII whenever the body changes — the previous tag set is
+            # invalid once the text differs.
+            from sera.memory.privacy import pii_kinds as _pii_kinds
+
+            tags = _pii_kinds(content)
+            sets.append("pii_tags = ?")
+            params.append(json.dumps(tags) if tags else None)
         if summary is not None:
             sets.append("summary = ?")
             params.append(summary)
@@ -675,12 +691,14 @@ class MemoryTree:
 
     def get_chunk(self, chunk_id: int) -> Chunk | None:
         row = self.conn.execute(
-            "SELECT id, source, content, summary, confidence, created_at "
+            "SELECT id, source, content, summary, confidence, created_at, pii_tags "
             "FROM chunks WHERE id = ?",
             (chunk_id,),
         ).fetchone()
         if row is None:
             return None
+        tags_raw = row["pii_tags"]
+        tags = tuple(json.loads(tags_raw)) if tags_raw else ()
         return Chunk(
             id=int(row["id"]),
             source=row["source"],
@@ -688,6 +706,7 @@ class MemoryTree:
             summary=row["summary"] or "",
             confidence=float(row["confidence"]),
             created_at=float(row["created_at"]),
+            pii_tags=tags,
         )
 
     # ─── Entities ────────────────────────────────────────────────────

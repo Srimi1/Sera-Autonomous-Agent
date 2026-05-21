@@ -57,11 +57,14 @@ class HybridHit:
     content: str
     confidence: float
     sources: tuple[str, ...]  # signals that surfaced this chunk: bm25|vector|graph
+    pii_tags: tuple[str, ...] = ()
+    redacted: bool = False
 
     def __repr__(self) -> str:  # cheaper, fixed shape for debugging
+        flags = "+redacted" if self.redacted else ""
         return (
             f"HybridHit(chunk_id={self.chunk_id}, score={self.score:.4f}, "
-            f"sources={self.sources!r})"
+            f"sources={self.sources!r}{flags})"
         )
 
 
@@ -224,6 +227,7 @@ def hybrid_search(
     apply_freshness: bool = True,
     touch: bool = True,
     now: float | None = None,
+    consent: bool = False,
 ) -> list[HybridHit]:
     """Run BM25 + vector + graph and fuse into one ranked list.
 
@@ -236,6 +240,12 @@ def hybrid_search(
     mentioned stay sharp even if their own body wasn't touched. `touch=True`
     bumps the freshness of every returned hit (EWMA pull toward 1.0).
     `now` is injectable for deterministic tests; defaults to `time.time()`.
+
+    `consent=False` (default) redacts the `content` of any hit whose
+    underlying chunk has `pii_tags`. The hit still surfaces — caller sees
+    the score, sources, and the kinds of PII detected — but the raw content
+    is replaced with a "[redacted — kinds; consent=True to reveal]" notice.
+    `consent=True` returns the original content unchanged.
 
     Returns up to `k` `HybridHit`s ordered by descending fused score. Each
     hit's `sources` tuple shows which signals surfaced it — useful for
@@ -266,11 +276,19 @@ def hybrid_search(
     if touch:
         for cid, _score, _sources in fused:
             tree.touch_chunk(cid, now=now)
-    return [_hydrate(tree, cid, score, sources) for cid, score, sources in fused]
+    return [
+        _hydrate(tree, cid, score, sources, consent=consent)
+        for cid, score, sources in fused
+    ]
 
 
 def _hydrate(
-    tree: MemoryTree, chunk_id: int, score: float, sources: tuple[str, ...]
+    tree: MemoryTree,
+    chunk_id: int,
+    score: float,
+    sources: tuple[str, ...],
+    *,
+    consent: bool = False,
 ) -> HybridHit:
     chunk = tree.get_chunk(chunk_id)
     if chunk is None:
@@ -282,10 +300,26 @@ def _hydrate(
             confidence=0.0,
             sources=sources,
         )
+    if chunk.pii_tags and not consent:
+        notice = (
+            f"[redacted — pii: {','.join(chunk.pii_tags)}; "
+            f"pass consent=True to reveal]"
+        )
+        return HybridHit(
+            chunk_id=chunk_id,
+            score=score,
+            content=notice,
+            confidence=chunk.confidence,
+            sources=sources,
+            pii_tags=chunk.pii_tags,
+            redacted=True,
+        )
     return HybridHit(
         chunk_id=chunk_id,
         score=score,
         content=chunk.content,
         confidence=chunk.confidence,
         sources=sources,
+        pii_tags=chunk.pii_tags,
+        redacted=False,
     )
