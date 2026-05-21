@@ -265,6 +265,75 @@ class MemoryTree:
         self.conn.commit()
         return int(chunk_id)
 
+    def update_chunk(
+        self,
+        chunk_id: int,
+        *,
+        content: str | None = None,
+        summary: str | None = None,
+        confidence: float | None = None,
+        embedding: Sequence[float] | None = None,
+    ) -> bool:
+        """Partial-update a chunk. Returns True iff the row existed.
+
+        Only non-None fields are written. The vss virtual table is kept
+        in sync — if a new embedding is supplied we delete + re-insert
+        the vss row (vss0 doesn't support UPDATE).
+        """
+        row = self.conn.execute(
+            "SELECT id FROM chunks WHERE id = ?", (chunk_id,)
+        ).fetchone()
+        if row is None:
+            return False
+
+        sets: list[str] = []
+        params: list[object] = []
+        if content is not None:
+            sets.append("content = ?")
+            params.append(content)
+        if summary is not None:
+            sets.append("summary = ?")
+            params.append(summary)
+        if confidence is not None:
+            if not 0.0 <= confidence <= 1.0:
+                raise ValueError(f"confidence out of range: {confidence}")
+            sets.append("confidence = ?")
+            params.append(float(confidence))
+        new_blob: bytes | None = None
+        if embedding is not None:
+            if len(embedding) != self.embedding_dim:
+                raise ValueError(
+                    f"embedding dim {len(embedding)} != tree dim {self.embedding_dim}"
+                )
+            new_blob = _embedding_to_blob(embedding)
+            sets.append("embedding = ?")
+            params.append(new_blob)
+        if not sets:
+            return True  # nothing to write but the row exists
+
+        params.append(chunk_id)
+        self.conn.execute(
+            f"UPDATE chunks SET {', '.join(sets)} WHERE id = ?", params
+        )
+        if self._vss and new_blob is not None:
+            # vss0 has no UPDATE — replace the indexed row.
+            self.conn.execute("DELETE FROM chunks_vss WHERE rowid = ?", (chunk_id,))
+            self.conn.execute(
+                "INSERT INTO chunks_vss(rowid, embedding) VALUES (?, ?)",
+                (chunk_id, new_blob),
+            )
+        self.conn.commit()
+        return True
+
+    def delete_chunk(self, chunk_id: int) -> bool:
+        """Remove a chunk plus its vss row. Returns True iff a row was deleted."""
+        cur = self.conn.execute("DELETE FROM chunks WHERE id = ?", (chunk_id,))
+        deleted = cur.rowcount > 0
+        if deleted and self._vss:
+            self.conn.execute("DELETE FROM chunks_vss WHERE rowid = ?", (chunk_id,))
+        self.conn.commit()
+        return deleted
+
     def get_chunk(self, chunk_id: int) -> Chunk | None:
         row = self.conn.execute(
             "SELECT id, source, content, summary, confidence, created_at "
