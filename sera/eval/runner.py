@@ -18,11 +18,10 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from sera.agent.budget import IterationBudget
 from sera.agent.loop import TokenSink, run_turn
-from sera.eval.cases import EvalCase, ScriptStep
+from sera.eval.cases import EvalCase
 from sera.eval.scoring import ScoreVerdict, score
 from sera.eval.stub_llm import StubLLM
 from sera.eval.telemetry import TelemetryStore, TurnRow

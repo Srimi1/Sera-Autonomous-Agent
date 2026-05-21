@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from sera.agent.budget import IterationBudget, MaxIterations
-from sera.agent.interrupt import InterruptToken, Interrupted
+from sera.agent.interrupt import InterruptToken
 from sera.context.compressor import FENCE, build_summarise_call, compact_session
 from sera.context.scrubber import StreamingContextScrubber, scrub
 from sera.context.tokenjuice import DEFAULT_COMPRESS_THRESHOLD, compress_sync
@@ -197,7 +197,7 @@ async def run_turn(
         active_tools = None if grace_mode else tool_schemas
 
         async def _consume(view_messages):
-            nonlocal assistant_text, tool_calls, finish_reason, usage
+            nonlocal assistant_text, finish_reason, usage
             async for chunk in llm.stream(
                 messages=view_messages,
                 tools=active_tools,
