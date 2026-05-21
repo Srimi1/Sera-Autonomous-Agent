@@ -175,8 +175,10 @@ def test_replay_case_substring_mismatch_fails(tmp_path: Path):
     assert "not-present" in result.reason
 
 
-def test_replay_case_no_expectations_is_pass(tmp_path: Path):
-    """A case with no expectations just verifies the handler didn't raise."""
+def test_replay_case_no_expectations_fails(tmp_path: Path):
+    """P0-2: a case with zero assertions must NOT promote. Phase P-25 promises
+    promote-by-correctness — silent absence of expectations is not correctness.
+    """
     import asyncio
     from sera.skills.loader import load_skill
     from sera.skills.verify import ReplayCase, replay_skill
@@ -185,7 +187,31 @@ def test_replay_case_no_expectations_is_pass(tmp_path: Path):
     skill = load_skill(p)
     case = ReplayCase(id="smoke", input={})
     result = asyncio.run(replay_skill(skill, case))
-    assert result.passed is True
+    assert result.passed is False
+    assert "no expectations" in result.reason.lower()
+
+
+def test_verify_via_replay_yaml_with_empty_expect_keeps_candidate(tmp_path: Path):
+    """A replay YAML where every case omits `expect:` must NOT promote — even
+    if the cases are loaded from disk and look syntactically valid.
+    """
+    import asyncio
+
+    from sera.skills.loader import load_skill
+    from sera.skills.verify import load_replay_cases, verify_via_replay
+
+    p = _write_skill_file(tmp_path / "naked", "naked", body="any text")
+    skill = load_skill(p)
+    yaml_path = tmp_path / "naked_replay.yaml"
+    yaml_path.write_text("skill: naked\ncases:\n  - id: c1\n    input: {}\n")
+    cases = load_replay_cases(yaml_path)
+    assert len(cases) == 1  # YAML loads cleanly
+
+    lc = SkillLifecycle(db_path=tmp_path / "lc.db")
+    lc.mark_candidate("naked")
+    report = asyncio.run(verify_via_replay(lc, skill, cases))
+    assert report.passed is False
+    assert lc.is_verified("naked") is False
 
 
 def test_replay_handler_exception_fails_loudly():

@@ -290,7 +290,10 @@ def _hydrate(
     *,
     consent: bool = False,
 ) -> HybridHit:
-    chunk = tree.get_chunk(chunk_id)
+    # tree.get_chunk now owns the consent gate (P0-1). Forward the flag;
+    # the returned Chunk already has content redacted when consent=False
+    # + pii_tags are non-empty.
+    chunk = tree.get_chunk(chunk_id, consent=consent)
     if chunk is None:
         # Race: chunk deleted between ranking and hydration. Skip-as-empty.
         return HybridHit(
@@ -300,20 +303,7 @@ def _hydrate(
             confidence=0.0,
             sources=sources,
         )
-    if chunk.pii_tags and not consent:
-        notice = (
-            f"[redacted — pii: {','.join(chunk.pii_tags)}; "
-            f"pass consent=True to reveal]"
-        )
-        return HybridHit(
-            chunk_id=chunk_id,
-            score=score,
-            content=notice,
-            confidence=chunk.confidence,
-            sources=sources,
-            pii_tags=chunk.pii_tags,
-            redacted=True,
-        )
+    redacted = bool(chunk.pii_tags) and not consent
     return HybridHit(
         chunk_id=chunk_id,
         score=score,
@@ -321,5 +311,5 @@ def _hydrate(
         confidence=chunk.confidence,
         sources=sources,
         pii_tags=chunk.pii_tags,
-        redacted=False,
+        redacted=redacted,
     )

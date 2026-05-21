@@ -195,6 +195,101 @@ def test_clean_chunk_never_redacted(tmp_path: Path):
 # ─── Migration ─────────────────────────────────────────────────
 
 
+def test_get_chunk_default_redacts_pii(tmp_path: Path):
+    """P0-1: get_chunk must redact by default; only consent=True reveals.
+
+    The original gap: anyone calling MemoryTree.get_chunk directly bypassed
+    the hybrid_search consent gate and read PII / secret tokens in cleartext.
+    """
+    tree = _tree(tmp_path)
+    cid = tree.add_chunk(source="s", content="api key sk-ant-api01-" + "A" * 30)
+    redacted = tree.get_chunk(cid)
+    assert redacted is not None
+    assert "sk-ant-api01" not in redacted.content
+    assert "anthropic_key" in redacted.content
+    assert "anthropic_key" in redacted.pii_tags
+
+
+def test_get_chunk_consent_reveals(tmp_path: Path):
+    tree = _tree(tmp_path)
+    cid = tree.add_chunk(source="s", content="email: jane@example.com")
+    revealed = tree.get_chunk(cid, consent=True)
+    assert "jane@example.com" in revealed.content
+
+
+def test_get_chunk_clean_chunk_unaffected(tmp_path: Path):
+    tree = _tree(tmp_path)
+    cid = tree.add_chunk(source="s", content="plain unsensitive text")
+    chunk = tree.get_chunk(cid)
+    assert chunk.content == "plain unsensitive text"
+    assert chunk.pii_tags == ()
+
+
+def test_tree_search_default_redacts_pii(tmp_path: Path):
+    """P0-1: tree.search bypasses hybrid_search — must also redact by default."""
+    tree = _tree(tmp_path)
+    e = StubEmbedder(dim=DIM)
+    secret = "deploy key sk-ant-api01-" + "B" * 30
+    cid = tree.add_chunk(
+        source="s", content=secret, embedding=_run(e.embed(secret)),
+    )
+    hits = tree.search(_run(e.embed("deploy key")), limit=1)
+    assert hits and hits[0].chunk_id == cid
+    assert "sk-ant-api01" not in hits[0].content
+    assert "anthropic_key" in hits[0].pii_tags
+
+
+def test_tree_search_consent_reveals(tmp_path: Path):
+    tree = _tree(tmp_path)
+    e = StubEmbedder(dim=DIM)
+    body = "contact ops@acme.com"
+    tree.add_chunk(source="s", content=body, embedding=_run(e.embed(body)))
+    hits = tree.search(_run(e.embed("contact")), limit=1, consent=True)
+    assert "ops@acme.com" in hits[0].content
+
+
+def test_extract_and_persist_sees_redacted_content_for_pii_chunks(tmp_path: Path):
+    """P0-1: the entity-extractor feeds chunk content into an LLM. PII must NOT
+    land in that LLM trace. extract_and_persist uses default consent=False.
+    """
+    import asyncio
+
+    from sera.memory.graph import ExtractedEntity, ExtractedEdge, ExtractedEntity, ExtractionResult
+    from sera.memory.graph import extract_and_persist
+
+    tree = _tree(tmp_path)
+    cid = tree.add_chunk(
+        source="s",
+        content="contact admin@secret.corp about the migration",
+    )
+
+    captured_content: dict = {}
+
+    class _SpyExtractor:
+        async def extract(self, text):
+            captured_content["seen"] = text
+            return ExtractionResult()
+
+    asyncio.run(extract_and_persist(tree, cid, _SpyExtractor()))
+    seen = captured_content["seen"]
+    assert "admin@secret.corp" not in seen
+    assert "email" in seen
+
+
+def test_vault_write_chunk_writes_raw_content_for_user_files(tmp_path: Path):
+    """P0-1: vault sync writes the user's own files. The user must see their own
+    PII in their editor — vault uses consent=True with explicit justification.
+    """
+    from sera.memory.vault import VaultSync
+
+    tree = _tree(tmp_path)
+    cid = tree.add_chunk(source="notes", content="my email is me@example.com")
+    sync = VaultSync(tree=tree, vault_dir=tmp_path / "vault")
+    path = sync.write_chunk(cid)
+    body = path.read_text()
+    assert "me@example.com" in body
+
+
 def test_legacy_db_migration_adds_pii_tags(tmp_path: Path):
     db = tmp_path / "legacy.db"
     legacy = sqlite3.connect(db)

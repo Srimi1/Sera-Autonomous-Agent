@@ -94,6 +94,16 @@ async def replay_skill(skill: Skill, case: ReplayCase) -> ReplayResult:
 
 
 def _score(case: ReplayCase, output: str) -> ReplayResult:
+    # P0-2: a case with no expectations is not a passing case. Phase P-25
+    # promises promote-by-correctness — silent absence of assertions would
+    # let a YAML with empty `expect:` blocks auto-promote any skill.
+    if not case.expect_substring and not case.expect_equals:
+        return ReplayResult(
+            case_id=case.id,
+            passed=False,
+            reason="case has no expectations — refusing to promote",
+            output=output,
+        )
     if case.expect_equals and output != case.expect_equals:
         return ReplayResult(
             case_id=case.id,

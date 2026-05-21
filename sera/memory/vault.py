@@ -89,8 +89,15 @@ class VaultSync:
         return self.vault_dir / _safe_segment(source) / f"{chunk_id}.md"
 
     def write_chunk(self, chunk_id: int) -> Path:
-        """Render a chunk to disk; overwrites any existing file."""
-        chunk = self.tree.get_chunk(chunk_id)
+        """Render a chunk to disk; overwrites any existing file.
+
+        `consent=True` on the read: vault files are user-owned. The user
+        opening their own `~/.sera/vault/...` markdown in an editor must
+        see their own PII — auto-redacting their own files would be
+        hostile. The consent gate sits between retrieval and the agent's
+        working context, not between the DB and the user's editor.
+        """
+        chunk = self.tree.get_chunk(chunk_id, consent=True)
         if chunk is None:
             raise KeyError(f"chunk {chunk_id} not found")
         meta = {

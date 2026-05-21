@@ -46,6 +46,14 @@ touches in a row pin the chunk near 1.0 again.
 """
 
 DEFAULT_DEDUP_THRESHOLD = 0.95
+
+
+def _pii_redaction_notice(pii_tags: Iterable[str]) -> str:
+    """Standard notice returned in place of content when consent gate blocks read."""
+    return (
+        f"[redacted — pii: {','.join(pii_tags)}; "
+        f"pass consent=True to reveal]"
+    )
 """Cosine similarity ≥ this collapses a new chunk into the existing canonical.
 
 0.95 is empirically conservative — distinct paraphrases of the same fact
@@ -129,6 +137,8 @@ class SearchHit:
     distance: float
     content: str
     confidence: float
+    pii_tags: tuple[str, ...] = ()
+    redacted: bool = False
 
 
 def _decayed(
@@ -689,7 +699,16 @@ class MemoryTree:
         entity_decay = 0.5 ** (elapsed / float(half_life))
         return max(base, entity_decay)
 
-    def get_chunk(self, chunk_id: int) -> Chunk | None:
+    def get_chunk(self, chunk_id: int, *, consent: bool = False) -> Chunk | None:
+        """Return a chunk by id. Redacts content when consent=False + pii_tags.
+
+        Default `consent=False` is the security contract: every direct caller
+        states intent explicitly. Internal callers that own the read context
+        (vault sync writing the user's own files, internal stats) pass
+        `consent=True` with a comment justifying it. The extractor path
+        (`graph.extract_and_persist`) keeps the default — chunk content
+        never leaks into LLM traces.
+        """
         row = self.conn.execute(
             "SELECT id, source, content, summary, confidence, created_at, pii_tags "
             "FROM chunks WHERE id = ?",
@@ -699,10 +718,13 @@ class MemoryTree:
             return None
         tags_raw = row["pii_tags"]
         tags = tuple(json.loads(tags_raw)) if tags_raw else ()
+        content = row["content"]
+        if tags and not consent:
+            content = _pii_redaction_notice(tags)
         return Chunk(
             id=int(row["id"]),
             source=row["source"],
-            content=row["content"],
+            content=content,
             summary=row["summary"] or "",
             confidence=float(row["confidence"]),
             created_at=float(row["created_at"]),
@@ -828,27 +850,67 @@ class MemoryTree:
         *,
         limit: int = 10,
         min_confidence: float = 0.0,
+        consent: bool = False,
     ) -> list[SearchHit]:
         """Top-k nearest chunks to `query` by cosine distance.
 
-        Uses sqlite-vss when available; otherwise falls back to a numpy
-        cosine scan over every embedded chunk. Both paths apply the
-        `min_confidence` filter in SQL before ranking.
+        Default `consent=False` redacts SearchHit.content when the chunk
+        carries pii_tags. This is the security contract: direct callers
+        of tree.search must state consent explicitly. Hybrid search,
+        vault sync, and other internal id-only consumers pass
+        `consent=True` to skip the redaction work since they consume
+        chunk_id (not content) or have already gated upstream.
         """
         if len(query) != self.embedding_dim:
             raise ValueError(
                 f"query dim {len(query)} != tree dim {self.embedding_dim}"
             )
         if self._vss:
-            return self._search_vss(query, limit=limit, min_confidence=min_confidence)
-        return self._search_numpy(query, limit=limit, min_confidence=min_confidence)
+            return self._search_vss(
+                query, limit=limit, min_confidence=min_confidence, consent=consent,
+            )
+        return self._search_numpy(
+            query, limit=limit, min_confidence=min_confidence, consent=consent,
+        )
+
+    def _hit_for_row(
+        self,
+        *,
+        chunk_id: int,
+        content: str,
+        confidence: float,
+        distance: float,
+        pii_tags_raw: object,
+        consent: bool,
+    ) -> SearchHit:
+        tags = (
+            tuple(json.loads(pii_tags_raw)) if pii_tags_raw else ()  # type: ignore[arg-type]
+        )
+        hit_content = content
+        redacted = False
+        if tags and not consent:
+            hit_content = _pii_redaction_notice(tags)
+            redacted = True
+        return SearchHit(
+            chunk_id=chunk_id,
+            distance=distance,
+            content=hit_content,
+            confidence=confidence,
+            pii_tags=tags,
+            redacted=redacted,
+        )
 
     def _search_vss(
-        self, query: Sequence[float], *, limit: int, min_confidence: float
+        self,
+        query: Sequence[float],
+        *,
+        limit: int,
+        min_confidence: float,
+        consent: bool,
     ) -> list[SearchHit]:
         blob = _embedding_to_blob(query)
         rows = self.conn.execute(
-            "SELECT c.id, c.content, c.confidence, v.distance "
+            "SELECT c.id, c.content, c.confidence, c.pii_tags, v.distance "
             "FROM chunks_vss v JOIN chunks c ON c.id = v.rowid "
             "WHERE vss_search(v.embedding, vss_search_params(?, ?)) "
             "AND c.confidence >= ? "
@@ -857,22 +919,29 @@ class MemoryTree:
             (blob, limit, float(min_confidence)),
         ).fetchall()
         return [
-            SearchHit(
+            self._hit_for_row(
                 chunk_id=int(r["id"]),
-                distance=float(r["distance"]),
                 content=r["content"],
                 confidence=float(r["confidence"]),
+                distance=float(r["distance"]),
+                pii_tags_raw=r["pii_tags"],
+                consent=consent,
             )
             for r in rows
         ]
 
     def _search_numpy(
-        self, query: Sequence[float], *, limit: int, min_confidence: float
+        self,
+        query: Sequence[float],
+        *,
+        limit: int,
+        min_confidence: float,
+        consent: bool,
     ) -> list[SearchHit]:
         q = np.asarray(query, dtype=np.float32)
         q_norm = float(np.linalg.norm(q)) or 1.0
         rows = self.conn.execute(
-            "SELECT id, content, confidence, embedding FROM chunks "
+            "SELECT id, content, confidence, embedding, pii_tags FROM chunks "
             "WHERE embedding IS NOT NULL AND confidence >= ? "
             "AND merged_into IS NULL",
             (float(min_confidence),),
@@ -889,11 +958,13 @@ class MemoryTree:
             # ordering semantics.
             distance = 1.0 - cosine
             hits.append(
-                SearchHit(
+                self._hit_for_row(
                     chunk_id=int(r["id"]),
-                    distance=distance,
                     content=r["content"],
                     confidence=float(r["confidence"]),
+                    distance=distance,
+                    pii_tags_raw=r["pii_tags"],
+                    consent=consent,
                 )
             )
         hits.sort(key=lambda h: (h.distance, -h.confidence))
