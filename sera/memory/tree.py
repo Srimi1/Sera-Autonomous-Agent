@@ -174,7 +174,9 @@ class MemoryTree:
             );
             CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source);
             CREATE INDEX IF NOT EXISTS idx_chunks_confidence ON chunks(confidence);
-            CREATE INDEX IF NOT EXISTS idx_chunks_extracted_at ON chunks(extracted_at);
+            -- idx_chunks_extracted_at is created in the migration block
+            -- below so legacy DBs (no extracted_at column yet) don't fail
+            -- the schema script.
 
             CREATE TABLE IF NOT EXISTS entities (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -196,6 +198,27 @@ class MemoryTree:
             CREATE INDEX IF NOT EXISTS idx_relations_src ON relations(src_entity_id);
             CREATE INDEX IF NOT EXISTS idx_relations_dst ON relations(dst_entity_id);
             CREATE INDEX IF NOT EXISTS idx_relations_kind ON relations(kind);
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+                content, summary, content='chunks', content_rowid='id'
+            );
+            CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
+                INSERT INTO chunks_fts(rowid, content, summary)
+                VALUES (new.id, COALESCE(new.content, ''), COALESCE(new.summary, ''));
+            END;
+            CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
+                INSERT INTO chunks_fts(chunks_fts, rowid, content, summary)
+                VALUES ('delete', old.id, COALESCE(old.content, ''),
+                        COALESCE(old.summary, ''));
+            END;
+            CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
+                INSERT INTO chunks_fts(chunks_fts, rowid, content, summary)
+                VALUES ('delete', old.id, COALESCE(old.content, ''),
+                        COALESCE(old.summary, ''));
+                INSERT INTO chunks_fts(rowid, content, summary)
+                VALUES (new.id, COALESCE(new.content, ''),
+                        COALESCE(new.summary, ''));
+            END;
             """
         )
         if self._vss:
@@ -206,12 +229,32 @@ class MemoryTree:
             )
         # Idempotent migration for older DBs that pre-date extracted_at.
         existing = {r[1] for r in c.execute("PRAGMA table_info(chunks)").fetchall()}
-        if "extracted_at" not in existing:
+        legacy_db = "extracted_at" not in existing
+        if legacy_db:
             c.execute("ALTER TABLE chunks ADD COLUMN extracted_at REAL")
             c.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chunks_extracted_at "
                 "ON chunks(extracted_at)"
             )
+
+        # Backfill chunks_fts. The triggers above only fire on future
+        # writes — pre-existing chunks need an explicit rebuild via FTS5's
+        # external-content command. We always rebuild on a legacy upgrade
+        # (extracted_at was just added → this is the first connect with
+        # the FTS schema). For non-legacy DBs the COUNT(*) on chunks_fts
+        # is unreliable (FTS5 internal rows can inflate it), so we fall
+        # back to "any chunks at all without FTS entries" as the trigger.
+        chunks_count = c.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+        needs_rebuild = legacy_db or (
+            chunks_count > 0
+            and c.execute(
+                "SELECT COUNT(*) FROM chunks WHERE id NOT IN "
+                "(SELECT rowid FROM chunks_fts)"
+            ).fetchone()[0]
+            > 0
+        )
+        if needs_rebuild:
+            c.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')")
         c.commit()
 
     def close(self) -> None:
