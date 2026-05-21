@@ -421,6 +421,41 @@ def skills_import_cmd(pack_path: Path, key_file: Path | None) -> None:
     console.print(f"[green]imported:[/green] {skill_name} → {root / skill_name}")
 
 
+@list_skills_cmd.command(name="scores")
+@click.option("--db", "db_path", default=None, type=click.Path(path_type=Path),
+              help="Scores DB path. Defaults to ~/.sera/skills_scores.db.")
+@click.option("--threshold", default=None, type=float,
+              help="Suggest threshold (default 0.35). Skills below shown as demoted.")
+def skills_scores_cmd(db_path: Path | None, threshold: float | None) -> None:
+    """Show quality scores for all tracked skills."""
+    from sera.skills.scoring import DEFAULT_SUGGEST_THRESHOLD, SkillScorer
+
+    from rich.table import Table
+
+    sc = SkillScorer(db_path=db_path)
+    thresh = threshold if threshold is not None else DEFAULT_SUGGEST_THRESHOLD
+    entries = sc.all_scores()
+    if not entries:
+        console.print("[dim]No scores recorded yet.[/dim]")
+        return
+    table = Table(title="Skill quality scores")
+    table.add_column("skill", style="bold")
+    table.add_column("score", justify="right")
+    table.add_column("invocations", justify="right")
+    table.add_column("success%", justify="right")
+    table.add_column("👍", justify="right")
+    table.add_column("👎", justify="right")
+    table.add_column("suggest?", justify="center")
+    for name, score, s in entries:
+        suc_pct = f"{s.successes/s.invocations:.0%}" if s.invocations else "—"
+        ok = "[green]yes[/green]" if score >= thresh else "[red]no[/red]"
+        table.add_row(
+            name, f"{score:.3f}", str(s.invocations), suc_pct,
+            str(s.thumbs_up), str(s.thumbs_down), ok,
+        )
+    console.print(table)
+
+
 @main.group()
 def eval() -> None:  # noqa: A001 — `eval` is the user-facing verb here
     """Golden-conversation harness — release gate."""
