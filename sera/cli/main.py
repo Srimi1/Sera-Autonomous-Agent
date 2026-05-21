@@ -236,6 +236,77 @@ def curator_log_cmd(db_path: Path | None, limit: int) -> None:
     console.print(table)
 
 
+@list_skills_cmd.command(name="commit")
+@click.argument("skill_name")
+@click.option("--message", "-m", required=True, help="Commit message.")
+@click.option("--author", default=None,
+              help='Override author, e.g. "curator <curator@sera>".')
+@click.pass_context
+def skills_commit_cmd(
+    ctx: click.Context, skill_name: str, message: str, author: str | None,
+) -> None:
+    """Stage <skill>/SKILL.md and commit the change to the skills repo."""
+    from sera.skills.git import commit_skill_change
+
+    root = (ctx.parent.params if ctx.parent else {}).get("root")
+    target = (root or SKILLS_DIR).resolve()
+    info = commit_skill_change(target, skill_name, message, author=author)
+    if info is None:
+        console.print(f"[dim]{skill_name}: no changes to commit.[/dim]")
+        return
+    console.print(f"[green]committed[/green] {info.sha[:8]}  {info.message}")
+
+
+@list_skills_cmd.command(name="log")
+@click.argument("skill_name")
+@click.option("--limit", default=20, type=int)
+@click.pass_context
+def skills_log_cmd(
+    ctx: click.Context, skill_name: str, limit: int,
+) -> None:
+    """Walk a skill's commit history (newest first)."""
+    from sera.skills.git import skill_log
+
+    root = (ctx.parent.params if ctx.parent else {}).get("root")
+    target = (root or SKILLS_DIR).resolve()
+    log = skill_log(target, skill_name, limit=limit)
+    if not log:
+        console.print(f"[dim]{skill_name}: no history (no commits).[/dim]")
+        return
+    table = Table(title=f"History — {skill_name}")
+    table.add_column("sha", style="bold")
+    table.add_column("when")
+    table.add_column("author")
+    table.add_column("message", overflow="fold")
+    for c in log:
+        when = datetime.fromtimestamp(c.when).strftime("%Y-%m-%d %H:%M:%S")
+        table.add_row(c.sha[:8], when, c.author, c.message)
+    console.print(table)
+
+
+@list_skills_cmd.command(name="diff")
+@click.argument("skill_name")
+@click.option("--from", "ref_a", default=None,
+              help="Older ref. Omit to default to HEAD~1.")
+@click.option("--to", "ref_b", default=None,
+              help="Newer ref. Omit to default to HEAD.")
+@click.pass_context
+def skills_diff_cmd(
+    ctx: click.Context, skill_name: str,
+    ref_a: str | None, ref_b: str | None,
+) -> None:
+    """Print the diff between two refs for one skill's SKILL.md."""
+    from sera.skills.git import skill_diff
+
+    root = (ctx.parent.params if ctx.parent else {}).get("root")
+    target = (root or SKILLS_DIR).resolve()
+    diff = skill_diff(target, skill_name, ref_a=ref_a, ref_b=ref_b)
+    if not diff:
+        console.print(f"[dim]{skill_name}: no diff to show.[/dim]")
+        return
+    console.print(diff)
+
+
 @list_skills_cmd.command(name="ab")
 @click.option("--a", "path_a", required=True, type=click.Path(path_type=Path,
               exists=True), help="Variant A SKILL.md.")
