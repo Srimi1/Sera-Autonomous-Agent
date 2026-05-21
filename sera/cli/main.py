@@ -711,6 +711,54 @@ def route_stats_cmd(limit: int, session_id: str | None) -> None:
     console.print(table)
 
 
+@main.group()
+def council() -> None:
+    """In-process council — N models answer in parallel, anonymous labels."""
+
+
+@council.command(name="run")
+@click.argument("question")
+@click.option("--models", default=None,
+              help="Comma-separated model IDs. Defaults to 3 stub models in dry-run.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Use stub LLM responses (no real API calls).")
+def council_run_cmd(question: str, models: str | None, dry_run: bool) -> None:
+    """Ask N models the same question in parallel and show anonymous answers."""
+    import asyncio
+    from sera.council.runner import run_council
+
+    from rich.table import Table
+
+    if dry_run or models is None:
+        model_list = ["stub-a", "stub-b", "stub-c"]
+
+        def stub_factory(model_id: str):
+            async def call(prompt: str) -> str:
+                return "[stub answer from council member]"
+            return call
+        factory = stub_factory
+    else:
+        model_list = [m.strip() for m in models.split(",") if m.strip()]
+        raise click.UsageError("Non-dry-run council requires LLM wiring (not yet integrated).")
+
+    run = asyncio.run(run_council(question, model_list, factory))
+    table = Table(title=f"Council — {question[:60]}")
+    table.add_column("label", style="bold", width=6)
+    table.add_column("answer")
+    table.add_column("ms", justify="right", width=8)
+    table.add_column("error", overflow="fold")
+    for a in sorted(run.answers, key=lambda x: x.label):
+        table.add_row(
+            a.label,
+            a.content or "",
+            f"{a.latency_ms:.0f}",
+            a.error or "",
+        )
+    console.print(table)
+    if dry_run:
+        console.print("[dim]dry-run: stub responses, no real LLM calls.[/dim]")
+
+
 @main.command()
 @click.option("--profile", default=None, help="LLM profile (reasoning|fast).")
 @click.option("--workspace", default=None, help="Workspace root for tools.")
