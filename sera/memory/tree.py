@@ -1,4 +1,4 @@
-"""Memory tree — persistent long-term memory with vector recall.
+"""Memory tree — persistent long-term memory with vector recall + dedup.
 
 Schema:
 
@@ -15,6 +15,7 @@ fact is believed (provenance_chunk_id) and how strongly (confidence).
 """
 from __future__ import annotations
 
+import json
 import logging
 import math
 import sqlite3
@@ -42,6 +43,14 @@ FRESHNESS_EWMA_ALPHA = 0.5
 new = alpha + (1 - alpha) * decayed_old. alpha=0.5 means one touch is
 worth ~half the gap between the decayed value and full freshness; a few
 touches in a row pin the chunk near 1.0 again.
+"""
+
+DEFAULT_DEDUP_THRESHOLD = 0.95
+"""Cosine similarity ≥ this collapses a new chunk into the existing canonical.
+
+0.95 is empirically conservative — distinct paraphrases of the same fact
+land around 0.85-0.92; near-identical re-ingestion lands above 0.97. The
+threshold is tunable per add_or_merge call.
 """
 
 _VSS_AVAILABLE = False
@@ -202,6 +211,8 @@ class MemoryTree:
                 extracted_at REAL,
                 freshness REAL NOT NULL DEFAULT 1.0,
                 last_accessed_at REAL,
+                merged_into INTEGER REFERENCES chunks(id),
+                merged_from TEXT,
                 created_at REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source);
@@ -274,6 +285,10 @@ class MemoryTree:
             )
         if "last_accessed_at" not in existing:
             c.execute("ALTER TABLE chunks ADD COLUMN last_accessed_at REAL")
+        if "merged_into" not in existing:
+            c.execute("ALTER TABLE chunks ADD COLUMN merged_into INTEGER")
+        if "merged_from" not in existing:
+            c.execute("ALTER TABLE chunks ADD COLUMN merged_from TEXT")
 
         # Backfill chunks_fts. The triggers above only fire on future
         # writes — pre-existing chunks need an explicit rebuild via FTS5's
@@ -448,6 +463,120 @@ class MemoryTree:
             self.conn.execute("DELETE FROM chunks_vss WHERE rowid = ?", (chunk_id,))
         self.conn.commit()
         return deleted
+
+    # ─── Dedup / consolidation ───────────────────────────────────────
+
+    def resolve_canonical(self, chunk_id: int) -> int:
+        """Follow `merged_into` pointers to the canonical chunk.
+
+        Cycle-safe via a visited set — a misconfigured pointer chain
+        breaks cleanly rather than looping forever. Returns the same id
+        if the chunk is already canonical or doesn't exist.
+        """
+        visited: set[int] = set()
+        cur = int(chunk_id)
+        while cur not in visited:
+            visited.add(cur)
+            row = self.conn.execute(
+                "SELECT merged_into FROM chunks WHERE id = ?", (cur,)
+            ).fetchone()
+            if row is None or row["merged_into"] is None:
+                return cur
+            cur = int(row["merged_into"])
+        return cur
+
+    def find_near_duplicate(
+        self,
+        embedding: Sequence[float],
+        *,
+        threshold: float = DEFAULT_DEDUP_THRESHOLD,
+    ) -> tuple[int, float] | None:
+        """Return (canonical_id, cosine_similarity) for the best match above
+        `threshold`, or None.
+
+        Uses the configured vector backend; threshold is on cosine
+        similarity in [0, 1]. The vector search itself already skips
+        merged-into rows, so the returned id is always canonical.
+        """
+        hits = self.search(embedding, limit=1)
+        if not hits:
+            return None
+        similarity = 1.0 - float(hits[0].distance)
+        if similarity >= float(threshold):
+            return (int(hits[0].chunk_id), similarity)
+        return None
+
+    def add_or_merge_chunk(
+        self,
+        *,
+        source: str,
+        content: str,
+        summary: str = "",
+        confidence: float = 1.0,
+        embedding: Sequence[float] | None = None,
+        now: float | None = None,
+        dedup_threshold: float = DEFAULT_DEDUP_THRESHOLD,
+    ) -> tuple[int, bool]:
+        """Insert a chunk OR merge into an existing near-duplicate.
+
+        Returns (chunk_id, merged) where `merged` indicates whether the
+        new content collapsed into an existing canonical. On merge:
+          * `merged_from` on the canonical gains a JSON entry recording
+            the source label that produced the duplicate.
+          * `confidence` is bumped to `max(existing, new)`.
+          * canonical is touched (freshness EWMA reset).
+
+        Without an embedding we can't compute similarity → always insert.
+        """
+        if embedding is None:
+            new_id = self.add_chunk(
+                source=source,
+                content=content,
+                summary=summary,
+                confidence=confidence,
+                embedding=None,
+                now=now,
+            )
+            return new_id, False
+
+        match = self.find_near_duplicate(embedding, threshold=dedup_threshold)
+        if match is None:
+            new_id = self.add_chunk(
+                source=source,
+                content=content,
+                summary=summary,
+                confidence=confidence,
+                embedding=embedding,
+                now=now,
+            )
+            return new_id, False
+
+        canonical_id, similarity = match
+        existing = self.conn.execute(
+            "SELECT confidence, merged_from FROM chunks WHERE id = ?",
+            (canonical_id,),
+        ).fetchone()
+        merged_from = json.loads(existing["merged_from"]) if existing["merged_from"] else []
+        merged_from.append(
+            {"source": source, "similarity": similarity, "at": float(now or time.time())}
+        )
+        new_confidence = max(float(existing["confidence"] or 0.0), float(confidence))
+        self.conn.execute(
+            "UPDATE chunks SET merged_from = ?, confidence = ? WHERE id = ?",
+            (json.dumps(merged_from), new_confidence, canonical_id),
+        )
+        self.conn.commit()
+        self.touch_chunk(canonical_id, now=now)
+        return canonical_id, True
+
+    def merged_from_for(self, chunk_id: int) -> list[dict]:
+        """Read the JSON provenance list for a canonical chunk."""
+        row = self.conn.execute(
+            "SELECT merged_from FROM chunks WHERE id = ?", (chunk_id,)
+        ).fetchone()
+        if row is None or not row["merged_from"]:
+            return []
+        return list(json.loads(row["merged_from"]))
 
     # ─── Freshness ───────────────────────────────────────────────────
 
@@ -704,6 +833,7 @@ class MemoryTree:
             "FROM chunks_vss v JOIN chunks c ON c.id = v.rowid "
             "WHERE vss_search(v.embedding, vss_search_params(?, ?)) "
             "AND c.confidence >= ? "
+            "AND c.merged_into IS NULL "
             "ORDER BY v.distance ASC",
             (blob, limit, float(min_confidence)),
         ).fetchall()
@@ -724,7 +854,8 @@ class MemoryTree:
         q_norm = float(np.linalg.norm(q)) or 1.0
         rows = self.conn.execute(
             "SELECT id, content, confidence, embedding FROM chunks "
-            "WHERE embedding IS NOT NULL AND confidence >= ?",
+            "WHERE embedding IS NOT NULL AND confidence >= ? "
+            "AND merged_into IS NULL",
             (float(min_confidence),),
         ).fetchall()
         hits: list[SearchHit] = []

@@ -92,7 +92,8 @@ def bm25_rank(tree: MemoryTree, query: str, *, limit: int) -> list[int]:
         return []
     rows = tree.conn.execute(
         "SELECT c.id FROM chunks_fts f JOIN chunks c ON c.id = f.rowid "
-        "WHERE chunks_fts MATCH ? ORDER BY bm25(chunks_fts) ASC LIMIT ?",
+        "WHERE chunks_fts MATCH ? AND c.merged_into IS NULL "
+        "ORDER BY bm25(chunks_fts) ASC LIMIT ?",
         (_escape_fts5(query), int(limit)),
     ).fetchall()
     return [int(r["id"]) for r in rows]
@@ -160,7 +161,9 @@ def graph_neighbours(
                 (eid, eid),
             ).fetchall()
             for e in edges:
-                cid = int(e["provenance_chunk_id"])
+                # Provenance can point at a now-merged chunk; resolve to
+                # canonical so dedup'd graph hits still surface a live row.
+                cid = tree.resolve_canonical(int(e["provenance_chunk_id"]))
                 chunk_score[cid] = chunk_score.get(cid, 0.0) + float(e["confidence"])
     # Order by accumulated confidence, then chunk_id for stability.
     ordered = sorted(chunk_score.items(), key=lambda kv: (-kv[1], kv[0]))
