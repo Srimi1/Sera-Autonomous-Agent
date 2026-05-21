@@ -374,6 +374,53 @@ def skills_ab_cmd(
     console.print(f"[dim]reason: {verdict.reason}[/dim]")
 
 
+@list_skills_cmd.command(name="export")
+@click.argument("name")
+@click.option("--out", "out_path", default=None, type=click.Path(path_type=Path),
+              help="Output path. Defaults to ./<name>.skillpack")
+@click.option("--key", "key_file", default=None, type=click.Path(path_type=Path),
+              help="Ed25519 private key PEM file for signing.")
+def skills_export_cmd(name: str, out_path: Path | None, key_file: Path | None) -> None:
+    """Export a skill as a signed .skillpack archive."""
+    from sera.skills.pack import PackError, pack_skill
+
+    ctx = click.get_current_context()
+    root = (ctx.parent.params if ctx.parent else {}).get("root")
+    dest = out_path or Path(f"{name}.skillpack")
+    private_key_pem: bytes | None = None
+    if key_file is not None:
+        private_key_pem = Path(key_file).read_bytes()
+    try:
+        pack_skill(root, name, dest, private_key_pem=private_key_pem)
+    except PackError as e:
+        console.print(f"[red]export failed: {e}[/red]")
+        raise SystemExit(1) from e
+    console.print(f"[green]exported:[/green] {dest}")
+    if private_key_pem is not None:
+        console.print("[dim]signed with provided key[/dim]")
+
+
+@list_skills_cmd.command(name="import")
+@click.argument("pack_path", type=click.Path(path_type=Path))
+@click.option("--key", "key_file", default=None, type=click.Path(path_type=Path),
+              help="Ed25519 public key PEM file for verification.")
+def skills_import_cmd(pack_path: Path, key_file: Path | None) -> None:
+    """Import a .skillpack into the skills directory."""
+    from sera.skills.pack import PackError, unpack_skill
+
+    ctx = click.get_current_context()
+    root = (ctx.parent.params if ctx.parent else {}).get("root")
+    public_key_pem: bytes | None = None
+    if key_file is not None:
+        public_key_pem = Path(key_file).read_bytes()
+    try:
+        skill_name = unpack_skill(pack_path, root, public_key_pem=public_key_pem)
+    except PackError as e:
+        console.print(f"[red]import failed: {e}[/red]")
+        raise SystemExit(1) from e
+    console.print(f"[green]imported:[/green] {skill_name} → {root / skill_name}")
+
+
 @main.group()
 def eval() -> None:  # noqa: A001 — `eval` is the user-facing verb here
     """Golden-conversation harness — release gate."""

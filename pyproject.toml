@@ -23,6 +23,7 @@ dependencies = [
     "httpx>=0.27.0",
     "tiktoken>=0.7.0",
     "numpy>=1.26.0",
+    "cryptography>=42.0.0",
 ]
 
 [project.optional-dependencies]
