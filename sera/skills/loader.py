@@ -128,12 +128,27 @@ class SkillRegistry:
     SKILL.md mtime changed. The global `sera.tools.registry` is the
     write-through target — skill-derived tools appear via `sera tools`
     without any further plumbing.
+
+    When a `lifecycle` is supplied, the registry consults `state_of` on
+    every refresh: ARCHIVED skills are skipped (and unregistered if
+    they had been live), every successful registration also `touch()`es
+    the lifecycle row so freshness-aware sweeps see the access.
     """
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, lifecycle: object | None = None) -> None:
         self.root = Path(root)
+        self.lifecycle = lifecycle  # SkillLifecycle | None (avoid hard import here)
         # name → (tool_name, manifest_mtime)
         self._tracked: dict[str, tuple[str, float]] = {}
+
+    def _is_archived(self, name: str) -> bool:
+        if self.lifecycle is None:
+            return False
+        # Lazy import to avoid the lifecycle module pulling skills.loader at
+        # import time (circular).
+        from sera.skills.lifecycle import LifecycleState
+
+        return self.lifecycle.state_of(name) is LifecycleState.ARCHIVED
 
     def refresh(self) -> "RefreshSummary":
         """Re-scan disk; sync the tool registry. Idempotent across runs."""
@@ -143,9 +158,14 @@ class SkillRegistry:
         removed: list[str] = []
         updated: list[str] = []
 
-        seen: set[str] = set()
+        seen_live: set[str] = set()
         for skill in discover_skills(self.root):
-            seen.add(skill.name)
+            if self._is_archived(skill.name):
+                # Treat archived skills as deleted from the runtime's view.
+                # If the registry had it live before archive, the cleanup
+                # pass below unregisters it (it's not in seen_live).
+                continue
+            seen_live.add(skill.name)
             manifest_mtime = skill.path.stat().st_mtime
             prior = self._tracked.get(skill.name)
             if prior is None:
@@ -153,6 +173,8 @@ class SkillRegistry:
                 tool_registry.register(tool)
                 self._tracked[skill.name] = (tool.name, manifest_mtime)
                 added.append(skill.name)
+                if self.lifecycle is not None:
+                    self.lifecycle.touch(skill.name)
                 continue
             tool_name, last_mtime = prior
             if manifest_mtime != last_mtime:
@@ -160,9 +182,11 @@ class SkillRegistry:
                 tool_registry.register(tool)
                 self._tracked[skill.name] = (tool.name, manifest_mtime)
                 updated.append(skill.name)
+                if self.lifecycle is not None:
+                    self.lifecycle.touch(skill.name)
 
         for name in list(self._tracked):
-            if name in seen:
+            if name in seen_live:
                 continue
             tool_name, _ = self._tracked.pop(name)
             tool_registry.unregister(tool_name)
