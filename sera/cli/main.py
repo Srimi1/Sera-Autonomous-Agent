@@ -194,6 +194,46 @@ def list_skills_cmd(root: Path | None, reload_flag: bool) -> None:
 
 
 @main.group()
+def curator() -> None:
+    """Post-session curator — reviews high-tool-density sessions."""
+
+
+@curator.command(name="log")
+@click.option("--db", "db_path", default=None, type=click.Path(path_type=Path),
+              help="Curator log DB path. Defaults to ~/.sera/curator.db.")
+@click.option("--limit", default=20, type=int)
+def curator_log_cmd(db_path: Path | None, limit: int) -> None:
+    """Print the most recent curator reports."""
+    from sera.curator.loop import CuratorStore
+
+    store = CuratorStore(db_path=db_path)
+    if not store.db_path.exists():
+        console.print("[dim]No curator reports yet.[/dim]")
+        return
+    reports = store.recent_reports(limit=limit)
+    if not reports:
+        console.print("[dim]No curator reports yet.[/dim]")
+        return
+    table = Table(title="Curator reports")
+    table.add_column("session", style="bold")
+    table.add_column("when")
+    table.add_column("proposals", justify="right")
+    table.add_column("kinds")
+    table.add_column("error", overflow="fold")
+    for r in reports:
+        when = datetime.fromtimestamp(r.finished_at).strftime("%Y-%m-%d %H:%M:%S")
+        kinds = ",".join(sorted({p.kind for p in r.proposals})) or "-"
+        table.add_row(
+            r.session_id,
+            when,
+            str(len(r.proposals)),
+            kinds,
+            r.error or "",
+        )
+    console.print(table)
+
+
+@main.group()
 def eval() -> None:  # noqa: A001 — `eval` is the user-facing verb here
     """Golden-conversation harness — release gate."""
 
