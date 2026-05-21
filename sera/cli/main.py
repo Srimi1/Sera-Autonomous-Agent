@@ -130,18 +130,21 @@ def list_sessions_cmd(limit: int) -> None:
     console.print(table)
 
 
-@main.command(name="skills")
+@main.group(name="skills", invoke_without_command=True)
 @click.option("--root", default=None, type=click.Path(path_type=Path),
               help="Skills directory. Defaults to ~/.sera/skills.")
 @click.option("--reload", "reload_flag", is_flag=True, default=False,
               help="Refresh tool registry against on-disk manifests.")
-def list_skills_cmd(root: Path | None, reload_flag: bool) -> None:
+@click.pass_context
+def list_skills_cmd(ctx: click.Context, root: Path | None, reload_flag: bool) -> None:
     """Discover every skill manifest under `--root` and print a summary.
 
     With `--reload`, register / re-register / unregister skill-derived
     tools in the live tool registry and print the delta. Without it,
-    the listing is read-only.
+    the listing is read-only. Subcommands (`ab`) handle skill ablation.
     """
+    if ctx.invoked_subcommand is not None:
+        return
     from sera.skills.loader import discover_skills, get_default_registry
 
     target = (root or SKILLS_DIR).resolve()
@@ -231,6 +234,73 @@ def curator_log_cmd(db_path: Path | None, limit: int) -> None:
             r.error or "",
         )
     console.print(table)
+
+
+@list_skills_cmd.command(name="ab")
+@click.option("--a", "path_a", required=True, type=click.Path(path_type=Path,
+              exists=True), help="Variant A SKILL.md.")
+@click.option("--b", "path_b", required=True, type=click.Path(path_type=Path,
+              exists=True), help="Variant B SKILL.md.")
+@click.option("--cases", "cases_path", required=True, type=click.Path(
+              path_type=Path, exists=True), help="Replay cases yaml.")
+@click.option("--cost-a", default=1.0, type=float, help="Per-call cost of A.")
+@click.option("--cost-b", default=1.0, type=float, help="Per-call cost of B.")
+@click.option("--lifecycle-db", default=None, type=click.Path(path_type=Path),
+              help="Lifecycle DB path. Defaults to ~/.sera/skills_lifecycle.db.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show verdict but do not persist lifecycle changes.")
+def skills_ab_cmd(
+    path_a: Path,
+    path_b: Path,
+    cases_path: Path,
+    cost_a: float,
+    cost_b: float,
+    lifecycle_db: Path | None,
+    dry_run: bool,
+) -> None:
+    """Run A/B ablation; winner verified, loser archived (revive-able)."""
+    import asyncio
+
+    from sera.skills.ab import Variant, decide_and_persist, run_ab
+    from sera.skills.lifecycle import SkillLifecycle
+    from sera.skills.loader import load_skill
+    from sera.skills.verify import load_replay_cases
+
+    skill_a = load_skill(path_a)
+    skill_b = load_skill(path_b)
+    cases = load_replay_cases(cases_path)
+    if not cases:
+        console.print(f"[red]No cases loaded from {cases_path}.[/red]")
+        sys.exit(2)
+
+    variant_a = Variant(skill=skill_a, cost=cost_a)
+    variant_b = Variant(skill=skill_b, cost=cost_b)
+
+    if dry_run:
+        result_a, result_b, verdict = asyncio.run(run_ab(variant_a, variant_b, cases))
+    else:
+        lc = SkillLifecycle(db_path=lifecycle_db)
+        verdict = asyncio.run(decide_and_persist(lc, variant_a, variant_b, cases))
+        result_a, result_b, _ = asyncio.run(run_ab(variant_a, variant_b, cases))
+
+    table = Table(title=f"A/B — {cases_path.name}")
+    table.add_column("variant", style="bold")
+    table.add_column("pass", justify="right")
+    table.add_column("total", justify="right")
+    table.add_column("success", justify="right")
+    table.add_column("cost", justify="right")
+    for r in (result_a, result_b):
+        table.add_row(
+            r.name,
+            str(r.n_passed),
+            str(r.total_cases),
+            f"{r.success_rate:.2%}",
+            f"{r.total_cost:.3f}",
+        )
+    console.print(table)
+    console.print(f"[bold green]winner:[/bold green] {verdict.winner}")
+    console.print(f"[bold red]loser (archived, revive-able):[/bold red] {verdict.loser}")
+    console.print(f"[dim]reason: {verdict.reason}[/dim]")
 
 
 @main.group()
