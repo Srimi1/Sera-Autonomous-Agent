@@ -218,12 +218,21 @@ def hybrid_search(
     weights: HybridWeights | None = None,
     k_rrf: int = DEFAULT_RRF_K,
     pool: int | None = None,
+    apply_freshness: bool = True,
+    touch: bool = True,
+    now: float | None = None,
 ) -> list[HybridHit]:
     """Run BM25 + vector + graph and fuse into one ranked list.
 
     Each signal pulls a `pool` (default `max(k*3, 30)`) of candidates so RRF
     has enough overlap room. `query_embedding=None` skips the vector signal
     cleanly; `weights.graph=0` skips the graph walk.
+
+    `apply_freshness=True` multiplies each fused RRF score by the chunk's
+    `entity_aware_freshness` — chunks whose linked entities were recently
+    mentioned stay sharp even if their own body wasn't touched. `touch=True`
+    bumps the freshness of every returned hit (EWMA pull toward 1.0).
+    `now` is injectable for deterministic tests; defaults to `time.time()`.
 
     Returns up to `k` `HybridHit`s ordered by descending fused score. Each
     hit's `sources` tuple shows which signals surfaced it — useful for
@@ -243,7 +252,17 @@ def hybrid_search(
     if weights.graph > 0:
         rankings["graph"] = graph_neighbours(tree, query, limit=cand_limit)
 
-    fused = _fuse(rankings, weights=weights, k_rrf=k_rrf)[:k]
+    fused = _fuse(rankings, weights=weights, k_rrf=k_rrf)
+    if apply_freshness:
+        fused = [
+            (cid, score * tree.entity_aware_freshness(cid, now=now), sources)
+            for cid, score, sources in fused
+        ]
+        fused.sort(key=lambda t: (-t[1], t[0]))
+    fused = fused[:k]
+    if touch:
+        for cid, _score, _sources in fused:
+            tree.touch_chunk(cid, now=now)
     return [_hydrate(tree, cid, score, sources) for cid, score, sources in fused]
 
 

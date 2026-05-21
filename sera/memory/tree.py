@@ -33,6 +33,17 @@ logger = logging.getLogger(__name__)
 DEFAULT_EMBEDDING_DIM = 1536
 """OpenAI text-embedding-3-small default. Override per MemoryTree if needed."""
 
+FRESHNESS_HALF_LIFE_SECONDS = 30 * 24 * 60 * 60
+"""30 days. After this much idle time a chunk's freshness halves."""
+
+FRESHNESS_EWMA_ALPHA = 0.5
+"""How hard a touch pulls freshness back toward 1.0.
+
+new = alpha + (1 - alpha) * decayed_old. alpha=0.5 means one touch is
+worth ~half the gap between the decayed value and full freshness; a few
+touches in a row pin the chunk near 1.0 again.
+"""
+
 _VSS_AVAILABLE = False
 _VSS_CHECKED = False
 
@@ -110,6 +121,25 @@ class SearchHit:
     confidence: float
 
 
+def _decayed(
+    *, stored: float, last_seen: float | None, now: float, half_life: float
+) -> float:
+    """Exponential decay of `stored` from `last_seen` to `now`.
+
+    `last_seen` None or in the future is treated as "no decay" — return
+    `stored` unchanged but clamped to [0, 1]. `half_life` ≤ 0 is invalid
+    upstream so we don't guard it here.
+    """
+    if stored <= 0.0:
+        return 0.0
+    if last_seen is None or now <= float(last_seen):
+        return min(1.0, stored)
+    elapsed = float(now) - float(last_seen)
+    # True half-life: value halves every `half_life` seconds.
+    factor = 0.5 ** (elapsed / float(half_life))
+    return max(0.0, min(1.0, stored * factor))
+
+
 def _embedding_to_blob(vec: Sequence[float]) -> bytes:
     arr = np.asarray(vec, dtype=np.float32)
     return arr.tobytes()
@@ -170,6 +200,8 @@ class MemoryTree:
                 confidence REAL NOT NULL DEFAULT 1.0,
                 embedding BLOB,
                 extracted_at REAL,
+                freshness REAL NOT NULL DEFAULT 1.0,
+                last_accessed_at REAL,
                 created_at REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source);
@@ -236,6 +268,12 @@ class MemoryTree:
                 "CREATE INDEX IF NOT EXISTS idx_chunks_extracted_at "
                 "ON chunks(extracted_at)"
             )
+        if "freshness" not in existing:
+            c.execute(
+                "ALTER TABLE chunks ADD COLUMN freshness REAL NOT NULL DEFAULT 1.0"
+            )
+        if "last_accessed_at" not in existing:
+            c.execute("ALTER TABLE chunks ADD COLUMN last_accessed_at REAL")
 
         # Backfill chunks_fts. The triggers above only fire on future
         # writes — pre-existing chunks need an explicit rebuild via FTS5's
@@ -288,6 +326,7 @@ class MemoryTree:
         summary: str = "",
         confidence: float = 1.0,
         embedding: Sequence[float] | None = None,
+        now: float | None = None,
     ) -> int:
         """Insert a chunk. Returns its `id`.
 
@@ -303,11 +342,12 @@ class MemoryTree:
             )
 
         blob = _embedding_to_blob(embedding) if embedding is not None else None
-        now = time.time()
+        now_ts = float(now if now is not None else time.time())
         cur = self.conn.execute(
             "INSERT INTO chunks (source, content, summary, confidence, embedding, "
-            "created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (source, content, summary, float(confidence), blob, now),
+            "freshness, last_accessed_at, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 1.0, ?, ?)",
+            (source, content, summary, float(confidence), blob, now_ts, now_ts),
         )
         chunk_id = cur.lastrowid
         if self._vss and blob is not None:
@@ -408,6 +448,101 @@ class MemoryTree:
             self.conn.execute("DELETE FROM chunks_vss WHERE rowid = ?", (chunk_id,))
         self.conn.commit()
         return deleted
+
+    # ─── Freshness ───────────────────────────────────────────────────
+
+    def freshness_of(
+        self,
+        chunk_id: int,
+        *,
+        now: float | None = None,
+        half_life: float = FRESHNESS_HALF_LIFE_SECONDS,
+    ) -> float:
+        """Time-decayed freshness of a chunk *without* touching it.
+
+        Reads stored `freshness` + `last_accessed_at`; applies exponential
+        decay from `last_accessed_at` to `now`. Returns 0.0 if the chunk
+        doesn't exist. Pure read — no UPDATE.
+        """
+        row = self.conn.execute(
+            "SELECT freshness, last_accessed_at FROM chunks WHERE id = ?",
+            (chunk_id,),
+        ).fetchone()
+        if row is None:
+            return 0.0
+        return _decayed(
+            stored=float(row["freshness"] or 0.0),
+            last_seen=row["last_accessed_at"],
+            now=now if now is not None else time.time(),
+            half_life=half_life,
+        )
+
+    def touch_chunk(
+        self,
+        chunk_id: int,
+        *,
+        now: float | None = None,
+        half_life: float = FRESHNESS_HALF_LIFE_SECONDS,
+        alpha: float = FRESHNESS_EWMA_ALPHA,
+    ) -> float:
+        """Mark a chunk as accessed; bumps freshness via EWMA toward 1.0.
+
+        Combines two effects:
+          1. Decay since `last_accessed_at` (exponential, governed by
+             `half_life`).
+          2. EWMA pull-toward-1.0 (`new = alpha + (1 - alpha) * decayed`).
+
+        Returns the new stored freshness. No-op on missing chunks
+        (returns 0.0).
+        """
+        now_ts = float(now if now is not None else time.time())
+        row = self.conn.execute(
+            "SELECT freshness, last_accessed_at FROM chunks WHERE id = ?",
+            (chunk_id,),
+        ).fetchone()
+        if row is None:
+            return 0.0
+        decayed = _decayed(
+            stored=float(row["freshness"] or 0.0),
+            last_seen=row["last_accessed_at"],
+            now=now_ts,
+            half_life=half_life,
+        )
+        new = alpha + (1.0 - alpha) * decayed
+        new = max(0.0, min(1.0, new))
+        self.conn.execute(
+            "UPDATE chunks SET freshness = ?, last_accessed_at = ? WHERE id = ?",
+            (new, now_ts, chunk_id),
+        )
+        self.conn.commit()
+        return new
+
+    def entity_aware_freshness(
+        self,
+        chunk_id: int,
+        *,
+        now: float | None = None,
+        half_life: float = FRESHNESS_HALF_LIFE_SECONDS,
+    ) -> float:
+        """Effective freshness: max(direct decay, decayed-entity-last_seen).
+
+        A 2-year-old chunk linked (via provenance) to an entity mentioned
+        yesterday stays sharp. Outclass: rivals decay docs uniformly;
+        Sera weights recency by which entities are still alive.
+        """
+        now_ts = float(now if now is not None else time.time())
+        base = self.freshness_of(chunk_id, now=now_ts, half_life=half_life)
+        row = self.conn.execute(
+            "SELECT MAX(e.last_seen) AS m FROM relations r "
+            "JOIN entities e ON (e.id = r.src_entity_id OR e.id = r.dst_entity_id) "
+            "WHERE r.provenance_chunk_id = ?",
+            (chunk_id,),
+        ).fetchone()
+        if row is None or row["m"] is None:
+            return base
+        elapsed = max(0.0, now_ts - float(row["m"]))
+        entity_decay = 0.5 ** (elapsed / float(half_life))
+        return max(base, entity_decay)
 
     def get_chunk(self, chunk_id: int) -> Chunk | None:
         row = self.conn.execute(
