@@ -169,10 +169,12 @@ class MemoryTree:
                 summary TEXT,
                 confidence REAL NOT NULL DEFAULT 1.0,
                 embedding BLOB,
+                extracted_at REAL,
                 created_at REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source);
             CREATE INDEX IF NOT EXISTS idx_chunks_confidence ON chunks(confidence);
+            CREATE INDEX IF NOT EXISTS idx_chunks_extracted_at ON chunks(extracted_at);
 
             CREATE TABLE IF NOT EXISTS entities (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -201,6 +203,14 @@ class MemoryTree:
                 f"CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vss USING vss0("
                 f"  embedding({self.embedding_dim})"
                 f")"
+            )
+        # Idempotent migration for older DBs that pre-date extracted_at.
+        existing = {r[1] for r in c.execute("PRAGMA table_info(chunks)").fetchall()}
+        if "extracted_at" not in existing:
+            c.execute("ALTER TABLE chunks ADD COLUMN extracted_at REAL")
+            c.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chunks_extracted_at "
+                "ON chunks(extracted_at)"
             )
         c.commit()
 
@@ -324,6 +334,28 @@ class MemoryTree:
             )
         self.conn.commit()
         return True
+
+    def mark_extracted(self, chunk_id: int, *, when: float | None = None) -> bool:
+        """Stamp `extracted_at` on a chunk. Returns True iff the row existed."""
+        ts = float(when if when is not None else time.time())
+        cur = self.conn.execute(
+            "UPDATE chunks SET extracted_at = ? WHERE id = ?",
+            (ts, chunk_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def chunks_pending_extraction(self, *, limit: int = 100) -> list[int]:
+        """IDs of chunks that have never been run through entity extraction.
+
+        Ordered by id so backfill walks insertions chronologically.
+        """
+        rows = self.conn.execute(
+            "SELECT id FROM chunks WHERE extracted_at IS NULL "
+            "ORDER BY id ASC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+        return [int(r[0]) for r in rows]
 
     def delete_chunk(self, chunk_id: int) -> bool:
         """Remove a chunk plus its vss row. Returns True iff a row was deleted."""
