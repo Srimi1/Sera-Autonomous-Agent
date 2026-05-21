@@ -18,7 +18,7 @@ from sera import __version__
 from sera.agent.budget import IterationBudget
 from sera.agent.interrupt import InterruptToken, Interrupted, install_sigint
 from sera.agent.loop import TokenSink, run_turn
-from sera.config import CONFIG_PATH, SESSIONS_DB, load, save
+from sera.config import CONFIG_PATH, SESSIONS_DB, SKILLS_DIR, load, save
 from sera.llm.router import for_profile
 from sera.llm.secrets import get_key, set_key
 from sera.memory.session import Session, recover_aborted_sessions
@@ -126,6 +126,40 @@ def list_sessions_cmd(limit: int) -> None:
             str(r["n"]),
             r["workspace"] or "",
             r["title"] or "",
+        )
+    console.print(table)
+
+
+@main.command(name="skills")
+@click.option("--root", default=None, type=click.Path(path_type=Path),
+              help="Skills directory. Defaults to ~/.sera/skills.")
+def list_skills_cmd(root: Path | None) -> None:
+    """Discover every skill manifest under `--root` and print a summary."""
+    from sera.skills.loader import discover_skills
+
+    target = (root or SKILLS_DIR).resolve()
+    if not target.is_dir():
+        console.print(f"[dim]No skills directory at {target}.[/dim]")
+        return
+    skills = discover_skills(target)
+    if not skills:
+        console.print(f"[dim]No skills in {target}.[/dim]")
+        return
+    table = Table(title=f"Skills — {target}")
+    table.add_column("name", style="bold")
+    table.add_column("trigger")
+    table.add_column("permission")
+    table.add_column("version")
+    table.add_column("council")
+    table.add_column("lineage", overflow="fold")
+    for s in skills:
+        table.add_row(
+            s.name,
+            s.trigger,
+            s.permission,
+            s.version,
+            "✓" if s.council else "",
+            ", ".join(s.lineage),
         )
     console.print(table)
 
