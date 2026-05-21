@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Awaitable, Callable
 
-from sera.context.tokens import estimate, estimate_messages
+from sera.context.tokens import estimate_messages
 
 log = logging.getLogger("sera.context.compressor")
 

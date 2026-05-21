@@ -19,7 +19,6 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
 
 # Tags we actively strip. Order matters only for prefix matching.
 TAGS = ("memory-context", "context")
