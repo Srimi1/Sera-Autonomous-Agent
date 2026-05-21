@@ -1,0 +1,7 @@
+# Replay-verification trace for the bundled `egoist` skill.
+skill: egoist
+cases:
+  - id: ego_signal
+    input: {}
+    expect:
+      substring: "Egoist mode"

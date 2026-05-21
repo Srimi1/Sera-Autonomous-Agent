@@ -1,0 +1,12 @@
+# Replay-verification trace for the bundled `caveman` skill.
+# A passing run promotes caveman from CANDIDATE to verified.
+skill: caveman
+cases:
+  - id: cav_signal_substring
+    input: {}
+    expect:
+      substring: "Caveman mode"
+  - id: cav_no_pleasantries_mention
+    input: {}
+    expect:
+      substring: "pleasantries"

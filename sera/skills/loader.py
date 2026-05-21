@@ -150,6 +150,21 @@ class SkillRegistry:
 
         return self.lifecycle.state_of(name) is LifecycleState.ARCHIVED
 
+    def _is_runtime_eligible(self, name: str) -> bool:
+        """Combined gate: not archived AND (verified OR pinned).
+
+        Pinned skills bypass the verification gate — pin is the user's
+        explicit override (e.g. inherited trusted skill, internal tools).
+        """
+        if self.lifecycle is None:
+            return True
+        if self._is_archived(name):
+            return False
+        if self.lifecycle.is_verified(name):
+            return True
+        row = self.lifecycle.get(name)
+        return bool(row and row.pinned)
+
     def refresh(self) -> "RefreshSummary":
         """Re-scan disk; sync the tool registry. Idempotent across runs."""
         from sera.tools import registry as tool_registry
@@ -160,10 +175,10 @@ class SkillRegistry:
 
         seen_live: set[str] = set()
         for skill in discover_skills(self.root):
-            if self._is_archived(skill.name):
-                # Treat archived skills as deleted from the runtime's view.
-                # If the registry had it live before archive, the cleanup
-                # pass below unregisters it (it's not in seen_live).
+            if not self._is_runtime_eligible(skill.name):
+                # Archived or unverified candidate — treat as deleted from
+                # the runtime view. Cleanup pass below unregisters if the
+                # tool was live in a previous refresh.
                 continue
             seen_live.add(skill.name)
             manifest_mtime = skill.path.stat().st_mtime

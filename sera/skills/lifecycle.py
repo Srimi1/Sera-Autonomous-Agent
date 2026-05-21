@@ -47,11 +47,24 @@ CREATE TABLE IF NOT EXISTS skill_lifecycle (
     state TEXT NOT NULL DEFAULT 'active',
     last_used_at REAL NOT NULL,
     archived_at REAL,
-    pinned INTEGER NOT NULL DEFAULT 0
+    pinned INTEGER NOT NULL DEFAULT 0,
+    verified INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_lifecycle_state ON skill_lifecycle(state);
 CREATE INDEX IF NOT EXISTS idx_lifecycle_last_used ON skill_lifecycle(last_used_at);
 """
+
+
+def _migrate_columns(conn: sqlite3.Connection) -> None:
+    """Idempotent add of any column the schema gained after first ship."""
+    existing = {
+        r[1] for r in conn.execute("PRAGMA table_info(skill_lifecycle)").fetchall()
+    }
+    if "verified" not in existing:
+        conn.execute(
+            "ALTER TABLE skill_lifecycle ADD COLUMN verified INTEGER NOT NULL DEFAULT 1"
+        )
+    conn.commit()
 
 
 @dataclass(frozen=True)
@@ -61,6 +74,7 @@ class LifecycleRow:
     last_used_at: float
     archived_at: float | None
     pinned: bool
+    verified: bool = True
 
 
 @dataclass(frozen=True)
@@ -95,6 +109,7 @@ class SkillLifecycle:
         conn.row_factory = sqlite3.Row
         try:
             conn.executescript(_SCHEMA)
+            _migrate_columns(conn)
             yield conn
         finally:
             conn.close()
@@ -136,7 +151,7 @@ class SkillLifecycle:
         """Return the raw persisted row, or None if unseen."""
         with self._conn() as c:
             row = c.execute(
-                "SELECT name, state, last_used_at, archived_at, pinned "
+                "SELECT name, state, last_used_at, archived_at, pinned, verified "
                 "FROM skill_lifecycle WHERE name = ?",
                 (name,),
             ).fetchone()
@@ -148,6 +163,7 @@ class SkillLifecycle:
             last_used_at=float(row["last_used_at"]),
             archived_at=float(row["archived_at"]) if row["archived_at"] is not None else None,
             pinned=bool(row["pinned"]),
+            verified=bool(row["verified"]),
         )
 
     def state_of(self, name: str, *, now: float | None = None) -> LifecycleState:
@@ -195,6 +211,46 @@ class SkillLifecycle:
                 (name, ts, ts),
             )
             c.commit()
+
+    def mark_candidate(self, name: str, *, now: float | None = None) -> None:
+        """Flag a skill as unverified. Upserts the row if missing.
+
+        Candidates are excluded from runtime registration until a
+        replay-verification pass calls `verify(name)`.
+        """
+        ts = float(now if now is not None else time.time())
+        with self._conn() as c:
+            c.execute(
+                "INSERT INTO skill_lifecycle "
+                "(name, state, last_used_at, archived_at, pinned, verified) "
+                "VALUES (?, 'active', ?, NULL, 0, 0) "
+                "ON CONFLICT(name) DO UPDATE SET verified = 0",
+                (name, ts),
+            )
+            c.commit()
+
+    def verify(self, name: str, *, now: float | None = None) -> None:
+        """Mark a candidate skill as verified (passed replay)."""
+        ts = float(now if now is not None else time.time())
+        with self._conn() as c:
+            c.execute(
+                "INSERT INTO skill_lifecycle "
+                "(name, state, last_used_at, archived_at, pinned, verified) "
+                "VALUES (?, 'active', ?, NULL, 0, 1) "
+                "ON CONFLICT(name) DO UPDATE SET verified = 1",
+                (name, ts),
+            )
+            c.commit()
+
+    def is_verified(self, name: str) -> bool:
+        """True for unseen skills (back-compat) and any row with verified=1."""
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT verified FROM skill_lifecycle WHERE name = ?", (name,)
+            ).fetchone()
+        if row is None:
+            return True
+        return bool(row["verified"])
 
     def revive(self, name: str, *, now: float | None = None) -> None:
         """ARCHIVED → ACTIVE. No-op when the row doesn't exist.
