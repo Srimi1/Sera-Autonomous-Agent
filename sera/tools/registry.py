@@ -16,6 +16,11 @@ def register(tool: Tool) -> None:
     _registry[tool.name] = tool
 
 
+def unregister(name: str) -> bool:
+    """Drop a tool by name. Returns True iff a tool was removed."""
+    return _registry.pop(name, None) is not None
+
+
 def get(name: str) -> Tool | None:
     _ensure_discovered()
     return _registry.get(name)

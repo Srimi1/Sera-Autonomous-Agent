@@ -133,14 +133,43 @@ def list_sessions_cmd(limit: int) -> None:
 @main.command(name="skills")
 @click.option("--root", default=None, type=click.Path(path_type=Path),
               help="Skills directory. Defaults to ~/.sera/skills.")
-def list_skills_cmd(root: Path | None) -> None:
-    """Discover every skill manifest under `--root` and print a summary."""
-    from sera.skills.loader import discover_skills
+@click.option("--reload", "reload_flag", is_flag=True, default=False,
+              help="Refresh tool registry against on-disk manifests.")
+def list_skills_cmd(root: Path | None, reload_flag: bool) -> None:
+    """Discover every skill manifest under `--root` and print a summary.
+
+    With `--reload`, register / re-register / unregister skill-derived
+    tools in the live tool registry and print the delta. Without it,
+    the listing is read-only.
+    """
+    from sera.skills.loader import discover_skills, get_default_registry
 
     target = (root or SKILLS_DIR).resolve()
     if not target.is_dir():
         console.print(f"[dim]No skills directory at {target}.[/dim]")
         return
+
+    if reload_flag:
+        reg = get_default_registry(target)
+        summary = reg.refresh()
+        if not summary.changed:
+            console.print(f"[dim]{target}: no changes since last reload.[/dim]")
+        else:
+            console.print(
+                f"[bold]Reload summary:[/bold] "
+                f"+{len(summary.added)} added, "
+                f"-{len(summary.removed)} removed, "
+                f"~{len(summary.updated)} updated"
+            )
+            for kind, names_ in (
+                ("added", summary.added),
+                ("updated", summary.updated),
+                ("removed", summary.removed),
+            ):
+                if names_:
+                    console.print(f"  [bold]{kind}[/bold]: {', '.join(names_)}")
+        return
+
     skills = discover_skills(target)
     if not skills:
         console.print(f"[dim]No skills in {target}.[/dim]")

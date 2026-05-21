@@ -1,7 +1,7 @@
 ---
 name: caveman
 trigger: /caveman
-permission: READ
+permission: READ_ONLY
 version: 0.1.0
 lineage:
   - openhuman/skills/conciseness

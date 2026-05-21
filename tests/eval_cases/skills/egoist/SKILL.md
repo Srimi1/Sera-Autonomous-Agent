@@ -1,7 +1,7 @@
 ---
 name: egoist
 trigger: /egoist
-permission: READ
+permission: READ_ONLY
 version: 0.1.0
 lineage:
   - sera-internal/mindset

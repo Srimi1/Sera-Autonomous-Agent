@@ -23,7 +23,7 @@ def _write_skill(dir_: Path, body: str) -> Path:
 _MIN_FRONTMATTER = {
     "name": "x",
     "trigger": "/x",
-    "permission": "READ",
+    "permission": "READ_ONLY",
     "version": "0.1.0",
 }
 
@@ -40,7 +40,7 @@ def test_load_minimal_skill_returns_required_fields(tmp_path: Path):
     body = """---
 name: caveman
 trigger: /caveman
-permission: READ
+permission: READ_ONLY
 version: 0.1.0
 ---
 Caveman mode — compressed responses.
@@ -50,7 +50,7 @@ Caveman mode — compressed responses.
     assert isinstance(skill, Skill)
     assert skill.name == "caveman"
     assert skill.trigger == "/caveman"
-    assert skill.permission == "READ"
+    assert skill.permission == "READ_ONLY"
     assert skill.version == "0.1.0"
     assert skill.body.startswith("Caveman mode")
 
@@ -164,7 +164,7 @@ def test_cli_lists_discovered_skills(tmp_path: Path, monkeypatch):
             {
                 "name": "caveman",
                 "trigger": "/caveman",
-                "permission": "READ",
+                "permission": "READ_ONLY",
                 "version": "0.1.0",
             }
         ),
@@ -175,7 +175,7 @@ def test_cli_lists_discovered_skills(tmp_path: Path, monkeypatch):
             {
                 "name": "egoist",
                 "trigger": "/egoist",
-                "permission": "READ",
+                "permission": "READ_ONLY",
                 "version": "0.2.0",
                 "lineage": ["hermes/egoist"],
             }
@@ -213,3 +213,187 @@ def test_cli_reports_empty_when_no_skills(tmp_path: Path):
     result = runner.invoke(main, ["skills", "--root", str(tmp_path)])
     assert result.exit_code == 0
     assert "no skills" in result.output.lower() or "empty" in result.output.lower()
+
+
+# ─── P-22 cycle 1: skill_to_tool tracer ────────────────────────
+
+
+def test_skill_to_tool_basics(tmp_path: Path):
+    from sera.skills.loader import skill_to_tool
+    from sera.tools.base import Permission, ToolScope
+
+    p = _write_skill(
+        tmp_path / "caveman",
+        _frontmatter(
+            {
+                "name": "caveman",
+                "trigger": "/caveman",
+                "permission": "READ_ONLY",
+                "version": "0.1.0",
+            },
+            body="Caveman mode — compressed responses.",
+        ),
+    )
+    skill = load_skill(p)
+    tool = skill_to_tool(skill)
+    assert tool.name == "skill.caveman"
+    assert tool.permission == Permission.READ_ONLY
+    assert tool.scope == ToolScope.SKILL
+    assert "Caveman mode" in tool.description
+
+
+def test_skill_tool_handler_returns_body(tmp_path: Path):
+    import asyncio
+    from sera.skills.loader import skill_to_tool
+    from sera.tools.base import ToolContext
+
+    p = _write_skill(
+        tmp_path / "echo",
+        _frontmatter(_MIN_FRONTMATTER, body="distinctive body text here"),
+    )
+    tool = skill_to_tool(load_skill(p))
+    ctx = ToolContext(session_id="s", workspace="/tmp")
+    result = asyncio.run(tool.handler({}, ctx))
+    assert "distinctive body text here" in result
+
+
+def test_skill_tool_parameters_default_to_open_object(tmp_path: Path):
+    """Skill with no args_schema → permissive default so the agent can still call it."""
+    from sera.skills.loader import skill_to_tool
+
+    p = _write_skill(tmp_path / "min", _frontmatter(_MIN_FRONTMATTER))
+    tool = skill_to_tool(load_skill(p))
+    assert tool.parameters.get("type") == "object"
+
+
+def test_skill_tool_parameters_use_args_schema_when_present(tmp_path: Path):
+    from sera.skills.loader import skill_to_tool
+
+    schema = {"type": "object", "properties": {"q": {"type": "string"}},
+              "required": ["q"]}
+    meta = {**_MIN_FRONTMATTER, "args_schema": schema}
+    p = _write_skill(tmp_path / "rich", _frontmatter(meta))
+    tool = skill_to_tool(load_skill(p))
+    assert tool.parameters == schema
+
+
+# ─── P-22 cycle 3: SkillRegistry registers every discovered skill ──
+
+
+def test_registry_registers_all_skills_on_load(tmp_path: Path):
+    from sera.skills.loader import SkillRegistry
+
+    _write_skill(tmp_path / "alpha", _frontmatter({**_MIN_FRONTMATTER, "name": "alpha"}))
+    _write_skill(tmp_path / "beta", _frontmatter({**_MIN_FRONTMATTER, "name": "beta"}))
+    reg = SkillRegistry(root=tmp_path)
+    reg.refresh()
+    tools = reg.tools()
+    names = sorted(t.name for t in tools)
+    assert names == ["skill.alpha", "skill.beta"]
+
+
+def test_registry_writes_through_to_tool_registry(tmp_path: Path):
+    from sera.skills.loader import SkillRegistry
+    from sera.tools import registry as tool_registry
+
+    _write_skill(tmp_path / "topical", _frontmatter({**_MIN_FRONTMATTER, "name": "topical"}))
+    reg = SkillRegistry(root=tmp_path)
+    reg.refresh()
+    fetched = tool_registry.get("skill.topical")
+    assert fetched is not None
+    assert fetched.scope.name == "SKILL"
+    reg.clear()  # leave the global tool registry clean for sibling tests
+    assert tool_registry.get("skill.topical") is None
+
+
+# ─── P-22 cycle 4: refresh delta (add / remove / update) ───────
+
+
+def test_refresh_reports_added_skills(tmp_path: Path):
+    from sera.skills.loader import SkillRegistry
+
+    reg = SkillRegistry(root=tmp_path)
+    assert reg.refresh().added == ()
+
+    _write_skill(tmp_path / "alpha", _frontmatter({**_MIN_FRONTMATTER, "name": "alpha"}))
+    summary = reg.refresh()
+    assert summary.added == ("alpha",)
+    assert summary.removed == ()
+    assert summary.updated == ()
+    reg.clear()
+
+
+def test_refresh_reports_removed_skills(tmp_path: Path):
+    from sera.skills.loader import SkillRegistry
+    from sera.tools import registry as tool_registry
+
+    _write_skill(tmp_path / "ephemeral", _frontmatter({**_MIN_FRONTMATTER, "name": "ephemeral"}))
+    reg = SkillRegistry(root=tmp_path)
+    reg.refresh()
+    assert tool_registry.get("skill.ephemeral") is not None
+
+    # Delete the skill dir and re-scan.
+    import shutil
+    shutil.rmtree(tmp_path / "ephemeral")
+    summary = reg.refresh()
+
+    assert summary.removed == ("ephemeral",)
+    assert summary.added == ()
+    assert tool_registry.get("skill.ephemeral") is None
+    reg.clear()
+
+
+def test_refresh_reports_updated_on_mtime_change(tmp_path: Path):
+    import os
+    from sera.skills.loader import SkillRegistry
+    from sera.tools import registry as tool_registry
+
+    p = _write_skill(
+        tmp_path / "hotswap",
+        _frontmatter({**_MIN_FRONTMATTER, "name": "hotswap"}, body="version A"),
+    )
+    reg = SkillRegistry(root=tmp_path)
+    reg.refresh()
+    assert "version A" in tool_registry.get("skill.hotswap").description
+
+    # Edit the body and force a newer mtime so the test isn't filesystem-flakey.
+    p.write_text(_frontmatter({**_MIN_FRONTMATTER, "name": "hotswap"}, body="version B"))
+    later = p.stat().st_mtime + 5
+    os.utime(p, (later, later))
+
+    summary = reg.refresh()
+    assert summary.updated == ("hotswap",)
+    assert "version B" in tool_registry.get("skill.hotswap").description
+    reg.clear()
+
+
+def test_refresh_is_no_op_when_nothing_changed(tmp_path: Path):
+    from sera.skills.loader import SkillRegistry
+
+    _write_skill(tmp_path / "stable", _frontmatter({**_MIN_FRONTMATTER, "name": "stable"}))
+    reg = SkillRegistry(root=tmp_path)
+    reg.refresh()  # initial registration
+    summary = reg.refresh()  # second pass — nothing changed
+    assert not summary.changed
+    reg.clear()
+
+
+# ─── P-22 cycle 5: `sera skills reload` CLI ────────────────────
+
+
+def test_cli_reload_reports_added(tmp_path: Path):
+    from click.testing import CliRunner
+    from sera.cli.main import main
+
+    _write_skill(tmp_path / "fresh", _frontmatter({**_MIN_FRONTMATTER, "name": "fresh"}))
+    runner = CliRunner()
+    result = runner.invoke(main, ["skills", "--root", str(tmp_path), "--reload"])
+    assert result.exit_code == 0, result.output
+    assert "fresh" in result.output
+    # The reload notice should distinguish itself from a plain listing.
+    assert "added" in result.output.lower() or "+1" in result.output
+
+    # Re-running with no on-disk changes should report no delta.
+    result2 = runner.invoke(main, ["skills", "--root", str(tmp_path), "--reload"])
+    assert result2.exit_code == 0
+    assert "no changes" in result2.output.lower() or "0 added" in result2.output.lower()
