@@ -236,6 +236,56 @@ def curator_log_cmd(db_path: Path | None, limit: int) -> None:
     console.print(table)
 
 
+@curator.command(name="discover")
+@click.option("--curator-db", "curator_db", default=None, type=click.Path(path_type=Path),
+              help="Curator log DB to scan for session patterns.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Print proposals without persisting.")
+@click.option("--limit", default=50, type=int,
+              help="Max recent curator reports to scan.")
+def curator_discover_cmd(curator_db: Path | None, dry_run: bool, limit: int) -> None:
+    """Scan recent curator reports for repeated patterns and propose new skills."""
+    from sera.curator.loop import CuratorStore
+    from sera.curator.discovery import MIN_PATTERN_FREQUENCY
+
+    store = CuratorStore(db_path=curator_db)
+    if not store.db_path.exists():
+        console.print("[dim]No sessions found. Run some sessions first.[/dim]")
+        return
+
+    reports = store.recent_reports(limit=limit)
+    if not reports:
+        console.print("[dim]No sessions found. 0 reports in curator log.[/dim]")
+        return
+
+    # Count tool_hint payloads as proxy for tool usage patterns.
+    tool_counts: dict[str, int] = {}
+    for r in reports:
+        for p in r.proposals:
+            if p.kind == "tool_hint":
+                tool = p.payload.get("tool") or ""
+                if tool:
+                    tool_counts[tool] = tool_counts.get(tool, 0) + 1
+
+    hot = {t: n for t, n in tool_counts.items() if n >= MIN_PATTERN_FREQUENCY}
+    if not hot:
+        console.print(
+            f"[dim]No repeated patterns (need ≥{MIN_PATTERN_FREQUENCY} occurrences). "
+            f"Scanned {len(reports)} reports.[/dim]"
+        )
+        return
+
+    table = Table(title="Discovery — proposed new skills")
+    table.add_column("tool pattern", style="bold")
+    table.add_column("occurrences", justify="right")
+    table.add_column("action")
+    for tool, count in sorted(hot.items(), key=lambda kv: -kv[1]):
+        table.add_row(tool, str(count), "propose skill" if dry_run else "would propose skill")
+    console.print(table)
+    if dry_run:
+        console.print(f"[dim]dry-run: {len(hot)} pattern(s) above threshold.[/dim]")
+
+
 @list_skills_cmd.command(name="commit")
 @click.argument("skill_name")
 @click.option("--message", "-m", required=True, help="Commit message.")
