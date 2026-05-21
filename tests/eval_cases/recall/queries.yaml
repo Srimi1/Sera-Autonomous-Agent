@@ -1,0 +1,98 @@
+# Recall benchmark queries — 30 cases mapping to chunks in corpus.yaml.
+# Each has exactly one expected target; the bench reports MRR + Recall@k.
+queries:
+  # ── Vocabulary-overlap queries (BM25 + vector both win) ──
+  - id: q01
+    query: "what is Sera"
+    expected_ids: [1]
+  - id: q02
+    query: "Anthropic prompt caching savings"
+    expected_ids: [2]
+  - id: q03
+    query: "reciprocal rank fusion explanation"
+    expected_ids: [3]
+  - id: q04
+    query: "markdown chunking heading respect"
+    expected_ids: [4]
+  - id: q05
+    query: "vector embeddings cosine"
+    expected_ids: [5]
+  - id: q06
+    query: "WAL journal mode concurrent"
+    expected_ids: [6]
+  - id: q07
+    query: "hybrid retrieval BM25 cosine graph"
+    expected_ids: [7]
+  - id: q08
+    query: "half-life decay stale facts"
+    expected_ids: [8]
+  - id: q09
+    query: "provenance tracking retrieved fact"
+    expected_ids: [9]
+  - id: q10
+    query: "typed causal edges directed"
+    expected_ids: [10]
+
+  # ── Entity-keyed queries (graph wins; literal terms wouldn't match) ──
+  - id: q11
+    query: "what did Alice do recently"
+    expected_ids: [11]
+  - id: q12
+    query: "what happened with Acme this quarter"
+    expected_ids: [12]
+  - id: q13
+    query: "tell me about Bob"
+    expected_ids: [13]
+  - id: q14
+    query: "any updates on Carol"
+    expected_ids: [14]
+  - id: q15
+    query: "Dave news today"
+    expected_ids: [15]
+  - id: q16
+    query: "what is Eve working on"
+    expected_ids: [16]
+  - id: q17
+    query: "Foxtrot Corp performance"
+    expected_ids: [17]
+  - id: q18
+    query: "Gamma Labs patent filing"
+    expected_ids: [18]
+  - id: q19
+    query: "Helios announcement details"
+    expected_ids: [19]
+  - id: q20
+    query: "Indigo Networks update"
+    expected_ids: [20]
+
+  # ── Literal-phrase queries (BM25 dominant) ──
+  - id: q21
+    query: "freeze-at-start system prompt hashed"
+    expected_ids: [21]
+  - id: q22
+    query: "cache control ephemeral markers tool result"
+    expected_ids: [22]
+  - id: q23
+    query: "iteration budget shared parent subagents"
+    expected_ids: [23]
+  - id: q24
+    query: "grace iteration summarize MaxIterations"
+    expected_ids: [24]
+  - id: q25
+    query: "TokenJuice HTML markdown URL shortening"
+    expected_ids: [25]
+  - id: q26
+    query: "partial-turn recovery finish reason"
+    expected_ids: [26]
+  - id: q27
+    query: "provenance-preserving merge canonical chunk"
+    expected_ids: [27]
+  - id: q28
+    query: "search-with-consent pii toggle"
+    expected_ids: [28]
+  - id: q29
+    query: "entity-aware freshness linked entities"
+    expected_ids: [29]
+  - id: q30
+    query: "Cormack reciprocal rank fusion k sixty"
+    expected_ids: [30]

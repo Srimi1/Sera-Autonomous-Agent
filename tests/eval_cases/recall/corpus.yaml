@@ -1,0 +1,109 @@
+# Recall benchmark corpus — 30 chunks across topics.
+# Each chunk has a stable `id` queries can reference. `entities:` populates
+# the typed-edge graph for graph-only retrieval signal.
+chunks:
+  # ── Vocabulary-overlap chunks (BM25 + vector both catch) ──
+  - id: 1
+    source: notes
+    content: "Sera is a local-first autonomous AI agent with persistent memory."
+  - id: 2
+    source: notes
+    content: "Anthropic prompt caching reduces multi-turn token spend by up to seventy-five percent."
+  - id: 3
+    source: notes
+    content: "Reciprocal rank fusion combines heterogeneous retrieval rankings into one ordering."
+  - id: 4
+    source: notes
+    content: "Markdown chunking respects heading boundaries so search results read like Wikipedia citations."
+  - id: 5
+    source: notes
+    content: "Vector embeddings represent semantic similarity via cosine distance in dense space."
+  - id: 6
+    source: notes
+    content: "WAL journal mode in SQLite allows concurrent readers while a writer is committing."
+  - id: 7
+    source: notes
+    content: "Hybrid retrieval fuses BM25 lexical score, vector cosine, and one-hop graph walks."
+  - id: 8
+    source: notes
+    content: "Half-life decay demotes stale facts without deleting them from memory."
+  - id: 9
+    source: notes
+    content: "Provenance tracking lets every retrieved fact trace back to the source chunk."
+  - id: 10
+    source: notes
+    content: "Typed causal edges support directed reasoning over the entity graph."
+
+  # ── Entity-keyed chunks (graph wins; entity not in content) ──
+  - id: 11
+    source: news
+    content: "She shipped the patch in record time after weeks of careful review."
+    entities: [Alice]
+  - id: 12
+    source: news
+    content: "The startup raised twelve million in series A funding last quarter."
+    entities: [Acme]
+  - id: 13
+    source: news
+    content: "He resigned citing creative differences with the executive team."
+    entities: [Bob]
+  - id: 14
+    source: news
+    content: "The new training run finished overnight and the benchmarks look strong."
+    entities: [Carol]
+  - id: 15
+    source: news
+    content: "Their open-source release this morning shipped without a regression."
+    entities: [Dave]
+  - id: 16
+    source: news
+    content: "The team merged the proposal after a long architecture review session."
+    entities: [Eve]
+  - id: 17
+    source: news
+    content: "Quarterly revenue beat consensus estimates by a wide margin."
+    entities: [Foxtrot Corp]
+  - id: 18
+    source: news
+    content: "The patent application was filed under expedited examination procedures."
+    entities: [Gamma Labs]
+  - id: 19
+    source: news
+    content: "Press said the launch announcement set a new bar for product reveals."
+    entities: [Helios]
+  - id: 20
+    source: news
+    content: "Their data-center expansion closed earlier than originally scheduled."
+    entities: [Indigo Networks]
+
+  # ── Literal-phrase chunks (BM25 dominant) ──
+  - id: 21
+    source: docs
+    content: "The freeze-at-start system prompt is hashed and persisted on session creation."
+  - id: 22
+    source: docs
+    content: "Cache control ephemeral markers attach to the last three tool result blocks."
+  - id: 23
+    source: docs
+    content: "An iteration budget shared across parent and subagents prevents runaway loops."
+  - id: 24
+    source: docs
+    content: "The grace iteration produces a final summarize-and-exit pass before MaxIterations."
+  - id: 25
+    source: docs
+    content: "TokenJuice compresses tool output via HTML to markdown, URL shortening, table debloat."
+  - id: 26
+    source: docs
+    content: "Partial-turn recovery flags sessions whose last assistant turn has no finish reason."
+  - id: 27
+    source: docs
+    content: "Provenance-preserving merge keeps a chain of merged source ids on the canonical chunk."
+  - id: 28
+    source: docs
+    content: "Search-with-consent gates pii-tagged retrieval behind a per-query consent toggle."
+  - id: 29
+    source: docs
+    content: "Entity-aware freshness lifts old chunks when their linked entities were recently mentioned."
+  - id: 30
+    source: docs
+    content: "Reciprocal rank fusion with k equals sixty is the Cormack et al canonical formulation."

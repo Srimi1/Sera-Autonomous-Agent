@@ -202,6 +202,49 @@ def eval_bench_cmd(ctx: click.Context, cases_dir: Path | None) -> None:
     ctx.invoke(eval_run_cmd, cases_dir=cases_dir, no_store=False)
 
 
+@eval.command(name="bench-memory")
+@click.option("--corpus", "corpus_path", default=None, type=click.Path(path_type=Path),
+              help="Recall corpus yaml. Defaults to tests/eval_cases/recall/corpus.yaml.")
+@click.option("--queries", "queries_path", default=None, type=click.Path(path_type=Path),
+              help="Recall queries yaml. Defaults to tests/eval_cases/recall/queries.yaml.")
+@click.option("--min-mrr", default=0.8, type=float,
+              help="Hybrid MRR floor — non-zero exit if hybrid < threshold.")
+def eval_bench_memory_cmd(
+    corpus_path: Path | None,
+    queries_path: Path | None,
+    min_mrr: float,
+) -> None:
+    """Retrieval recall benchmark (per-mode MRR + Recall@k)."""
+    from sera.eval.memory_bench import run_memory_bench
+
+    base = _default_cases_dir() / "recall"
+    corpus = (corpus_path or base / "corpus.yaml").resolve()
+    queries = (queries_path or base / "queries.yaml").resolve()
+    if not corpus.is_file() or not queries.is_file():
+        console.print(f"[red]Missing bench fixtures: {corpus} or {queries}[/red]")
+        sys.exit(2)
+    results = run_memory_bench(corpus, queries)
+
+    table = Table(title=f"Recall bench — {corpus.parent.name}")
+    table.add_column("mode", style="bold")
+    table.add_column("MRR", justify="right")
+    table.add_column("R@1", justify="right")
+    table.add_column("R@5", justify="right")
+    table.add_column("R@10", justify="right")
+    table.add_column("ms/q", justify="right")
+    table.add_column("Q", justify="right")
+    hybrid_mrr = 0.0
+    for r in results:
+        table.add_row(*r.as_row())
+        if r.mode == "hybrid":
+            hybrid_mrr = r.mrr
+    console.print(table)
+    console.print(f"[bold]hybrid MRR = {hybrid_mrr:.3f}[/bold] (floor {min_mrr})")
+    if hybrid_mrr < min_mrr:
+        console.print("[red]Hybrid MRR below floor.[/red]")
+        sys.exit(1)
+
+
 @eval.command(name="show")
 @click.option("--limit", default=5, help="Most recent runs to display.")
 def eval_show_cmd(limit: int) -> None:
