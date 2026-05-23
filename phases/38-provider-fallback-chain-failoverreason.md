@@ -2,7 +2,7 @@
 
 ## Status
 
-pending.
+done.
 
 ## Outclass claim
 
@@ -27,4 +27,4 @@ P-37.
 
 ## Notes
 
-_Journal: decisions, blockers, commit refs go here._
+2026-05-23: `sera/llm/failover.py` — `FailoverReason` enum (RateLimit/Quota/ServerError/Timeout/AuthExpired/Unknown), `classify()` maps HTTP status + message patterns to reason, `FailoverEvent` dataclass with primary/fallback labels + timestamp. `FailoverChain` is LLM-protocol-compatible: wraps a list of adapters, rotates on any non-ContextOverflow error, records typed events. Verification: simulated 429 → fallback path confirmed in chain.events() trace. ContextOverflow not swallowed. 29 tests, 691 total.
