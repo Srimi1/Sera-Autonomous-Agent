@@ -38,6 +38,7 @@ from sera.tools.registry import all_tools
 # ---------------------------------------------------------------------------
 
 DEFAULT_AUTO_DIR = SERA_HOME / "tools" / "auto"
+DEFAULT_QUARANTINE_DIR = SERA_HOME / "tools" / "quarantine"
 
 _NAME_RE = re.compile(r"^[a-z_][a-z0-9_]{1,63}$")
 
