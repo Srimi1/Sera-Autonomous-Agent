@@ -70,8 +70,13 @@ def setup() -> None:
 
 
 @main.command(name="tools")
-def list_tools_cmd() -> None:
-    """Print the tool inventory with permission tiers."""
+@click.option("--stats", is_flag=True, help="Show per-tool usage, success rate, latency, $/call.")
+def list_tools_cmd(stats: bool) -> None:
+    """Print the tool inventory with permission tiers.
+
+    Pass --stats to also print real numbers per tool: calls, success%, p50 latency,
+    avg latency, avg cost. Numbers come from ~/.sera/tool_stats.db (P-50).
+    """
     table = Table(title="Sera tools", show_lines=False)
     table.add_column("name", style="bold")
     table.add_column("permission")
@@ -80,6 +85,33 @@ def list_tools_cmd() -> None:
     for t in sorted(all_tools(), key=lambda t: t.name):
         table.add_row(t.name, t.permission.name, t.scope.name, t.description)
     console.print(table)
+
+    if not stats:
+        return
+
+    from sera.tools.stats import tool_stats
+    rows = tool_stats()
+    if not rows:
+        console.print("\n[dim]No tool calls recorded yet.[/dim]")
+        return
+
+    stats_table = Table(title="Tool quality (drift detector)")
+    stats_table.add_column("tool", style="bold")
+    stats_table.add_column("calls", justify="right")
+    stats_table.add_column("ok%", justify="right")
+    stats_table.add_column("p50 ms", justify="right")
+    stats_table.add_column("avg ms", justify="right")
+    stats_table.add_column("$/call", justify="right")
+    for r in rows:
+        stats_table.add_row(
+            r.tool_name,
+            str(r.n_calls),
+            f"{r.success_pct:.1f}",
+            str(r.p50_ms),
+            f"{r.avg_latency_ms:.1f}",
+            f"{r.avg_cost_usd:.5f}",
+        )
+    console.print(stats_table)
 
 
 @main.command(name="sessions")
