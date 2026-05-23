@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from sera.agent.budget import IterationBudget, MaxIterations
 from sera.llm.budget import BudgetEnforcer, BudgetExceeded
+from sera.llm.distill_cache import DistillCache, compute_key as _distill_key
 from sera.agent.interrupt import InterruptToken
 from sera.context.compressor import FENCE, build_summarise_call, compact_session
 from sera.context.scrubber import StreamingContextScrubber, scrub
@@ -153,6 +154,7 @@ async def run_turn(
     compaction_aggressive_ratio: float = 0.4,
     council_config: CouncilConfig | None = None,
     cost_enforcer: BudgetEnforcer | None = None,
+    distill_cache: DistillCache | None = None,
 ) -> str:
     """Run one full agent turn.
 
@@ -180,8 +182,25 @@ async def run_turn(
     else:
         tool_schemas = [t.to_anthropic_schema() for t in all_tools()]
 
+    # Distillation cache: check before entering the LLM loop.
+    _distill_key_val: str | None = None
+    _distill_hit = False
+    if distill_cache is not None:
+        try:
+            _tool_msgs = [m.to_openai() for m in session.messages if m.role == "tool"]
+            _distill_key_val = _distill_key(user_msg, _tool_msgs)
+            _cached = distill_cache.get(_distill_key_val)
+            if _cached is not None:
+                sink.on_text(_cached)
+                sink.on_text("\n")
+                _distill_hit = True
+                return _cached
+        except Exception:
+            pass
+
     final_text = ""
     grace_mode = False
+    _turn_cost: float = 0.0
 
     while True:
         interrupt.check()
@@ -279,6 +298,7 @@ async def run_turn(
             )
             if cost_enforcer is not None:
                 cost_enforcer.add(_call_cost, task_kind=_task_kind)
+            _turn_cost += _call_cost
         except BudgetExceeded:
             raise
         except Exception:
@@ -366,5 +386,12 @@ async def run_turn(
                 )
             )
             interrupt.check()
+
+    # Store successful response in distillation cache for future hits.
+    if distill_cache is not None and _distill_key_val and final_text and not _distill_hit:
+        try:
+            distill_cache.put(_distill_key_val, final_text, cost_usd=_turn_cost)
+        except Exception:
+            pass
 
     return final_text
