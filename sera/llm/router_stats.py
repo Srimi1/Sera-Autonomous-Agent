@@ -99,6 +99,29 @@ def record_call(
         con.commit()
 
 
+def cost_since(timestamp: float, *, task_kind: str | None = None, _db: Path | None = None) -> float:
+    """Sum cost_usd for all calls recorded at or after `timestamp`.
+
+    Optionally filter by task_kind. Returns 0.0 if DB missing or no rows.
+    """
+    db = _db or ROUTER_STATS_DB
+    if not db.exists():
+        return 0.0
+    with _conn(db) as con:
+        if task_kind is None:
+            row = con.execute(
+                "SELECT COALESCE(SUM(cost_usd), 0.0) FROM router_calls WHERE recorded_at >= ?",
+                (timestamp,),
+            ).fetchone()
+        else:
+            row = con.execute(
+                "SELECT COALESCE(SUM(cost_usd), 0.0) FROM router_calls "
+                "WHERE recorded_at >= ? AND task_kind = ?",
+                (timestamp, task_kind),
+            ).fetchone()
+    return float(row[0])
+
+
 def total_calls(_db: Path | None = None) -> int:
     db = _db or ROUTER_STATS_DB
     if not db.exists():

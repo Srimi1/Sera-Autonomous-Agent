@@ -33,6 +33,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "approval_required_at_or_above": "DANGEROUS",
         "max_iterations": 25,
     },
+    "budget": {
+        "session_soft_usd": 0.50,
+        "session_hard_usd": 1.00,
+        "day_soft_usd": 2.00,
+        "day_hard_usd": 5.00,
+        # skill_limits: {"task_kind": [soft_usd, hard_usd]}
+        "skill_limits": {},
+    },
 }
 
 

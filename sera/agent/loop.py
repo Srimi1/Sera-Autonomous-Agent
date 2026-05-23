@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from sera.agent.budget import IterationBudget, MaxIterations
+from sera.llm.budget import BudgetEnforcer, BudgetExceeded
 from sera.agent.interrupt import InterruptToken
 from sera.context.compressor import FENCE, build_summarise_call, compact_session
 from sera.context.scrubber import StreamingContextScrubber, scrub
@@ -151,6 +152,7 @@ async def run_turn(
     compaction_target_ratio: float = 0.8,
     compaction_aggressive_ratio: float = 0.4,
     council_config: CouncilConfig | None = None,
+    cost_enforcer: BudgetEnforcer | None = None,
 ) -> str:
     """Run one full agent turn.
 
@@ -195,6 +197,11 @@ async def run_turn(
                 if not final_text:
                     final_text = "[max iterations reached]"
                 break
+
+        if cost_enforcer is not None:
+            _budget_check = cost_enforcer.check()
+            if _budget_check.blocked:
+                raise BudgetExceeded(_budget_check.message)
 
         openai_messages = [m.to_openai() for m in session.messages]
         view = await _build_view(
@@ -256,17 +263,24 @@ async def run_turn(
             )
 
         try:
-            from sera.llm.router_stats import record_call as _record_call
+            from sera.llm.router_stats import _calc_cost, record_call as _record_call
             _task_kind = "tool" if tool_calls else "chat"
+            _in_tok = usage.get("input_tokens", 0) if usage else 0
+            _out_tok = usage.get("output_tokens", 0) if usage else 0
+            _call_cost = _calc_cost(getattr(llm, "model", ""), _in_tok, _out_tok)
             _record_call(
                 provider=llm.name,
                 model=getattr(llm, "model", "unknown"),
                 task_kind=_task_kind,
                 latency_ms=_latency_ms,
-                input_tokens=usage.get("input_tokens", 0) if usage else 0,
-                output_tokens=usage.get("output_tokens", 0) if usage else 0,
+                input_tokens=_in_tok,
+                output_tokens=_out_tok,
                 success=True,
             )
+            if cost_enforcer is not None:
+                cost_enforcer.add(_call_cost, task_kind=_task_kind)
+        except BudgetExceeded:
+            raise
         except Exception:
             pass
 

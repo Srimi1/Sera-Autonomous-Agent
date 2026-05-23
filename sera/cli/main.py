@@ -860,10 +860,13 @@ def chat(profile: str | None, workspace: str | None, session_id: str | None) -> 
         )
     )
 
+    from sera.llm.budget import BudgetConfig, BudgetEnforcer
+    cost_enforcer = BudgetEnforcer(BudgetConfig.from_config(cfg))
+
     approval = CliApprovalGate()
     sink = _make_sink()
 
-    asyncio.run(_repl(session, llm, sink, approval, threshold, max_iters))
+    asyncio.run(_repl(session, llm, sink, approval, threshold, max_iters, cost_enforcer))
 
 
 def _make_sink() -> TokenSink:
@@ -905,9 +908,10 @@ def _shorten_args(args: dict) -> str:
     return out[:80] + ("…" if len(out) > 80 else "")
 
 
-async def _repl(session, llm, sink, approval, threshold, max_iters) -> None:
+async def _repl(session, llm, sink, approval, threshold, max_iters, cost_enforcer=None) -> None:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.patch_stdout import patch_stdout
+    from sera.llm.budget import BudgetExceeded
 
     ps: PromptSession = PromptSession()
     while True:
@@ -935,6 +939,12 @@ async def _repl(session, llm, sink, approval, threshold, max_iters) -> None:
                 console.print(f"[bold]{role}[/bold] {snip}")
             continue
 
+        # Soft-cap banner — shown before the turn, doesn't block.
+        if cost_enforcer is not None:
+            _pre = cost_enforcer.check()
+            if _pre.warning:
+                console.print(f"[yellow]⚠ {_pre.message}[/yellow]")
+
         console.print("[bold green]sera ›[/bold green] ", end="")
         budget = IterationBudget.of(max_iters)
         token = InterruptToken()
@@ -949,7 +959,10 @@ async def _repl(session, llm, sink, approval, threshold, max_iters) -> None:
                     approval_threshold=threshold,
                     budget=budget,
                     interrupt=token,
+                    cost_enforcer=cost_enforcer,
                 )
+        except BudgetExceeded as e:
+            console.print(f"\n[red bold]💸 {e}[/red bold]")
         except Interrupted:
             console.print("\n[yellow][interrupted][/yellow]")
         except KeyboardInterrupt:
