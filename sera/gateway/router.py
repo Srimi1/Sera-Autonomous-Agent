@@ -101,6 +101,8 @@ class Router:
         latency_budget_ms: int = 30_000,
         cost_budget_usd: float = 0.10,
         on_inbound: Callable[[InboundEvent], Awaitable[None]] | None = None,
+        on_response: Callable[[InboundEvent, "OutboundResponse"], Awaitable[None]] | None = None,
+        session_resolver: Callable[[InboundEvent], Session] | None = None,
         workspace: str | None = None,
     ) -> None:
         """
@@ -118,6 +120,11 @@ class Router:
             cost_budget_usd:    reward gate.
             on_inbound:         hook called with the event before dispatch
                                 (use to ingest into MemoryTree).
+            on_response:        hook called with (event, response) after dispatch
+                                (use for outbound platform sends).
+            session_resolver:   maps event → Session. P-52 uses this for 24h
+                                per-user session continuity. None = fresh session
+                                per event.
             workspace:          workspace root for tool calls inside the turn.
         """
         self._llm_factory = llm_factory
@@ -129,6 +136,8 @@ class Router:
         self._latency_budget_ms = latency_budget_ms
         self._cost_budget_usd = cost_budget_usd
         self._on_inbound = on_inbound
+        self._on_response = on_response
+        self._session_resolver = session_resolver
         self._workspace = workspace
         self._n_handled = 0
 
@@ -179,10 +188,17 @@ class Router:
                 profile_used=profile, error=str(exc),
             )
 
-        # Session is per-event by default. Platform adapters (P-52+) can
-        # extend this to thread/channel-scoped sessions for continuity.
+        # Session resolution: platform adapters (P-52+) inject a resolver
+        # for per-user / per-thread continuity. Default = fresh session per event.
         ws = self._workspace or "/tmp"
-        session = Session.create(workspace=ws)
+        if self._session_resolver is not None:
+            try:
+                session = self._session_resolver(event)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("session_resolver failed, falling back to fresh: %s", exc)
+                session = Session.create(workspace=ws)
+        else:
+            session = Session.create(workspace=ws)
 
         t0 = time.monotonic()
         budget = IterationBudget.of(self._max_iterations)
@@ -224,7 +240,7 @@ class Router:
             )
             self._bandit.update(profile, event.task_kind, reward=reward)
 
-        return OutboundResponse(
+        response = OutboundResponse(
             event=event,
             ok=success,
             text=text,
@@ -232,6 +248,16 @@ class Router:
             latency_ms=latency_ms,
             error=error,
         )
+
+        # on_response hook — outbound platform send (telegram.sendMessage etc.).
+        # Failure here MUST NOT crash dispatch; we log and return the response anyway.
+        if self._on_response is not None:
+            try:
+                await self._on_response(event, response)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("on_response hook failed: %s", exc)
+
+        return response
 
     # ------------------------------------------------------------------
     # Queue consumer — used by GatewayServer
