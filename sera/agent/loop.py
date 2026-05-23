@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -230,6 +231,7 @@ async def run_turn(
                 assistant_text += tail
                 sink.on_text(tail)
 
+        _t0 = time.monotonic()
         try:
             await _consume(view)
         except ContextOverflow:
@@ -243,6 +245,7 @@ async def run_turn(
             usage = None
             scrubber = StreamingContextScrubber()
             await _consume(view)
+        _latency_ms = int((time.monotonic() - _t0) * 1000)
 
         if usage:
             session.record_usage(
@@ -251,6 +254,21 @@ async def run_turn(
                 cache_read_tokens=usage.get("cache_read_input_tokens", 0),
                 cache_creation_tokens=usage.get("cache_creation_input_tokens", 0),
             )
+
+        try:
+            from sera.llm.router_stats import record_call as _record_call
+            _task_kind = "tool" if tool_calls else "chat"
+            _record_call(
+                provider=llm.name,
+                model=getattr(llm, "model", "unknown"),
+                task_kind=_task_kind,
+                latency_ms=_latency_ms,
+                input_tokens=usage.get("input_tokens", 0) if usage else 0,
+                output_tokens=usage.get("output_tokens", 0) if usage else 0,
+                success=True,
+            )
+        except Exception:
+            pass
 
         # Persist assistant turn (OpenAI tool_calls schema). Arguments stored
         # as JSON; secret values inside arguments are redacted first.

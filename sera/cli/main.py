@@ -19,6 +19,7 @@ from sera.agent.budget import IterationBudget
 from sera.agent.interrupt import InterruptToken, Interrupted, install_sigint
 from sera.agent.loop import TokenSink, run_turn
 from sera.config import CONFIG_PATH, SESSIONS_DB, SKILLS_DIR, load, save
+from sera.llm import router_stats as _router_stats
 from sera.llm.router import for_profile
 from sera.llm.secrets import get_key, set_key
 from sera.memory.session import Session, recover_aborted_sessions
@@ -656,11 +657,14 @@ def route() -> None:
 @click.option("--limit", default=20, help="Max sessions to show.")
 @click.option("--session-id", default=None, help="Show one session only.")
 def route_stats_cmd(limit: int, session_id: str | None) -> None:
-    """Show prompt-cache hit ratio per session.
+    """Show prompt-cache hit ratio per session and per-task-kind routing table.
 
     Reads token totals accumulated by the agent loop (Anthropic only —
     OpenAI's usage block doesn't expose cache_read tokens). A session with
     `cache_read > 0` confirms the freeze-at-start cache is working.
+
+    The routing table shows p50 latency, avg cost/turn, and success rate per
+    (provider, model, task_kind). Requires 50+ recorded calls for reliable stats.
     """
     if not SESSIONS_DB.exists():
         console.print("[dim]No sessions yet.[/dim]")
@@ -684,14 +688,14 @@ def route_stats_cmd(limit: int, session_id: str | None) -> None:
     if not rows:
         console.print("[dim]No sessions yet.[/dim]")
         return
-    table = Table(title="Prompt-cache stats")
-    table.add_column("session", style="bold")
-    table.add_column("in", justify="right")
-    table.add_column("out", justify="right")
-    table.add_column("cache-read", justify="right")
-    table.add_column("cache-write", justify="right")
-    table.add_column("hit%", justify="right")
-    table.add_column("title", overflow="fold")
+    cache_table = Table(title="Prompt-cache stats")
+    cache_table.add_column("session", style="bold")
+    cache_table.add_column("in", justify="right")
+    cache_table.add_column("out", justify="right")
+    cache_table.add_column("cache-read", justify="right")
+    cache_table.add_column("cache-write", justify="right")
+    cache_table.add_column("hit%", justify="right")
+    cache_table.add_column("title", overflow="fold")
     for r in rows:
         in_t = int(r["input_tokens"] or 0)
         out_t = int(r["output_tokens"] or 0)
@@ -699,7 +703,7 @@ def route_stats_cmd(limit: int, session_id: str | None) -> None:
         cw = int(r["cache_creation_tokens"] or 0)
         denom = in_t + cr + cw
         hit = (cr / denom * 100) if denom else 0.0
-        table.add_row(
+        cache_table.add_row(
             r["id"],
             f"{in_t}",
             f"{out_t}",
@@ -708,7 +712,39 @@ def route_stats_cmd(limit: int, session_id: str | None) -> None:
             f"{hit:.1f}",
             r["title"] or "",
         )
-    console.print(table)
+    console.print(cache_table)
+
+    # Per-task-kind routing table — needs 50+ calls for reliable p50.
+    _MIN_CALLS = 50
+    n_calls = _router_stats.total_calls()
+    if n_calls < _MIN_CALLS:
+        console.print(
+            f"\n[dim]Router stats: {n_calls}/{_MIN_CALLS} calls recorded "
+            f"(need {_MIN_CALLS} for reliable p50).[/dim]"
+        )
+        return
+    rows_rt = _router_stats.p50_table()
+    if not rows_rt:
+        return
+    rt = Table(title=f"Router stats ({n_calls} calls)")
+    rt.add_column("provider", style="bold")
+    rt.add_column("model")
+    rt.add_column("task", style="cyan")
+    rt.add_column("n", justify="right")
+    rt.add_column("p50 ms", justify="right")
+    rt.add_column("$/turn", justify="right")
+    rt.add_column("ok%", justify="right")
+    for r in rows_rt:
+        rt.add_row(
+            r["provider"],
+            r["model"],
+            r["task_kind"],
+            str(r["n"]),
+            str(r["p50_ms"]),
+            f"{r['avg_cost_usd']:.5f}",
+            f"{r['success_pct']:.1f}",
+        )
+    console.print(rt)
 
 
 @main.group()

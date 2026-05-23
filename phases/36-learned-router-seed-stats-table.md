@@ -2,7 +2,7 @@
 
 ## Status
 
-pending.
+done.
 
 ## Outclass claim
 
@@ -27,4 +27,4 @@ P-10.
 
 ## Notes
 
-_Journal: decisions, blockers, commit refs go here._
+2026-05-23: `sera/llm/router_stats.py` — sqlite `router_calls` table at `~/.sera/router_stats.db`. `record_call` hooks into `run_turn` after every LLM stream (provider, model, task_kind chat|tool, latency_ms, tokens, cost_usd, success). `p50_table()` groups by (provider, model, task_kind) → median latency, avg $/turn, success%. `sera route stats` prints cache table + routing table when ≥50 calls recorded. 14 tests, 640 total. Commit: see git log.
