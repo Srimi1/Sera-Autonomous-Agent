@@ -43,10 +43,29 @@ DEFAULT_QUARANTINE_DIR = SERA_HOME / "tools" / "quarantine"
 _NAME_RE = re.compile(r"^[a-z_][a-z0-9_]{1,63}$")
 
 # AST node names that signal dangerous patterns in handler bodies.
+# Covers: direct code execution (eval/exec/compile), introspection escape hatches
+# (globals/locals/vars/__builtins__/__globals__/__import__), and shell-execution
+# sinks that would let a tool run `rm -rf /` without going through subprocess at all.
 _DANGEROUS_NAMES: frozenset[str] = frozenset({
     "eval", "exec", "compile",
     "__import__", "__builtins__", "__globals__",
     "globals", "locals", "vars",
+    # os shell-exec sinks
+    "system", "popen", "execv", "execve", "execvp", "execvpe",
+    "execl", "execle", "execlp", "execlpe",
+    "spawnl", "spawnle", "spawnlp", "spawnlpe",
+    "spawnv", "spawnve", "spawnvp", "spawnvpe",
+    "posix_spawn", "posix_spawnp",
+    # pty / process injection
+    "spawn", "fork", "forkpty",
+    # subprocess shell-string sinks
+    "getoutput", "getstatusoutput",
+})
+
+# Subprocess call function names — checked for shell=True kwarg regardless
+# of attribute form (subprocess.Popen) or bare name (Popen after `from subprocess import Popen`).
+_SUBPROCESS_FUNCS: frozenset[str] = frozenset({
+    "Popen", "call", "run", "check_call", "check_output",
 })
 
 
@@ -114,14 +133,23 @@ def ast_safety_scan(source: str) -> list[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.id in _DANGEROUS_NAMES:
             issues.append(f"dangerous name {node.id!r} used at line {node.lineno}")
-        elif isinstance(node, ast.Attribute):
-            if node.attr in _DANGEROUS_NAMES:
-                issues.append(f"dangerous attribute {node.attr!r} at line {node.lineno}")
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-            # subprocess.Popen(..., shell=True) and similar
-            if node.func.attr in ("Popen", "call", "run", "check_call", "check_output"):
+        elif isinstance(node, ast.Attribute) and node.attr in _DANGEROUS_NAMES:
+            issues.append(f"dangerous attribute {node.attr!r} at line {node.lineno}")
+        elif isinstance(node, ast.Call):
+            # Catch shell=True on both attribute calls (subprocess.Popen) AND
+            # bare-name calls (Popen after `from subprocess import Popen`).
+            func_name: str | None = None
+            if isinstance(node.func, ast.Attribute):
+                func_name = node.func.attr
+            elif isinstance(node.func, ast.Name):
+                func_name = node.func.id
+            if func_name in _SUBPROCESS_FUNCS:
                 for kw in node.keywords:
-                    if kw.arg == "shell" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
+                    if (
+                        kw.arg == "shell"
+                        and isinstance(kw.value, ast.Constant)
+                        and kw.value.value is True
+                    ):
                         issues.append(
                             f"subprocess with shell=True at line {node.lineno}"
                         )

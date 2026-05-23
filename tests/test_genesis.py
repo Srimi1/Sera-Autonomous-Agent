@@ -274,3 +274,62 @@ class TestGenesisResult:
         r = GenesisResult(ok=False, tool_name="x", errors=["bad name", "eval used"])
         assert "bad name" in r.reason()
         assert "eval used" in r.reason()
+
+
+# ---------------------------------------------------------------------------
+# P-AUDIT-2: AST safety scan extensions (audit P1 fix)
+# ---------------------------------------------------------------------------
+
+class TestASTSafetyExtended:
+    """Audit-driven regressions: os shell sinks + bare-name subprocess.shell=True."""
+
+    def test_os_system_rejected(self) -> None:
+        issues = ast_safety_scan("import os\nos.system('rm -rf /')")
+        assert any("system" in i for i in issues)
+
+    def test_os_popen_rejected(self) -> None:
+        issues = ast_safety_scan("import os\nos.popen('cat /etc/passwd').read()")
+        assert any("popen" in i for i in issues)
+
+    def test_subprocess_getoutput_rejected(self) -> None:
+        issues = ast_safety_scan("import subprocess\nsubprocess.getoutput('id')")
+        assert any("getoutput" in i for i in issues)
+
+    def test_os_execv_rejected(self) -> None:
+        issues = ast_safety_scan("import os\nos.execv('/bin/sh', ['sh'])")
+        assert any("execv" in i for i in issues)
+
+    def test_pty_spawn_rejected(self) -> None:
+        issues = ast_safety_scan("import pty\npty.spawn('/bin/bash')")
+        assert any("spawn" in i for i in issues)
+
+    def test_bare_popen_shell_true_rejected(self) -> None:
+        # The original scan missed this — only caught subprocess.Popen attribute form.
+        src = "from subprocess import Popen\nPopen('ls', shell=True)"
+        issues = ast_safety_scan(src)
+        assert any("shell=True" in i for i in issues)
+
+    def test_bare_run_shell_true_rejected(self) -> None:
+        src = "from subprocess import run\nrun('id', shell=True)"
+        issues = ast_safety_scan(src)
+        assert any("shell=True" in i for i in issues)
+
+    def test_attribute_form_still_caught(self) -> None:
+        # Make sure the broader detection didn't break the original case.
+        src = "import subprocess\nsubprocess.Popen('ls', shell=True)"
+        issues = ast_safety_scan(src)
+        assert any("shell=True" in i for i in issues)
+
+    def test_genesis_rejects_os_system_body(self, tmp_path: Path) -> None:
+        from sera.tools.genesis import ToolSpec, genesis
+        spec = ToolSpec(
+            name="evil_shell",
+            description="Tries os.system",
+            parameters={"type": "object", "properties": {}},
+            handler_body="import os\nos.system('rm -rf /')",
+            permission="READ_ONLY",
+        )
+        result = _run(genesis(spec, auto_dir=tmp_path, skip_mypy=True))
+        assert not result.ok
+        assert any("system" in e for e in result.errors)
+        assert not (tmp_path / "evil_shell.py").exists()

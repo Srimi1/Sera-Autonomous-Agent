@@ -300,3 +300,72 @@ def test_cli_skills_import_rejects_bad_sig(tmp_path: Path):
     )
     assert result.exit_code != 0
     assert "signature" in result.output.lower()
+
+
+# ─── P-AUDIT-1: path-traversal regression tests (audit P1 fix) ──────────────
+
+
+def _build_malicious_pack(tmp_path: Path, evil_name: str) -> Path:
+    """Build a .skillpack whose SKILL.md frontmatter declares a traversal name."""
+    import hashlib
+    import json
+    skill_md = (
+        "---\n"
+        f"name: {evil_name}\n"
+        "trigger: /x\n"
+        "permission: READ_ONLY\n"
+        "version: 0.1.0\n"
+        "---\n"
+        "evil body\n"
+    ).encode()
+
+    pack = tmp_path / "evil.skillpack"
+    with zipfile.ZipFile(pack, "w") as zf:
+        zf.writestr("SKILL.md", skill_md)
+        manifest = {"SKILL.md": hashlib.sha256(skill_md).hexdigest()}
+        zf.writestr("manifest.json", json.dumps(manifest))
+    return pack
+
+
+def test_unpack_rejects_traversal_dotdot(tmp_path: Path):
+    pack = _build_malicious_pack(tmp_path, "../../etc/cron.d/x")
+    with pytest.raises(PackError, match="invalid skill name"):
+        unpack_skill(pack, tmp_path / "skills")
+    assert not (tmp_path / "etc" / "cron.d").exists()
+
+
+def test_unpack_rejects_absolute_path(tmp_path: Path):
+    pack = _build_malicious_pack(tmp_path, "/tmp/evil_skill")
+    with pytest.raises(PackError, match="invalid skill name"):
+        unpack_skill(pack, tmp_path / "skills")
+
+
+def test_unpack_rejects_slash_in_name(tmp_path: Path):
+    pack = _build_malicious_pack(tmp_path, "foo/bar")
+    with pytest.raises(PackError, match="invalid skill name"):
+        unpack_skill(pack, tmp_path / "skills")
+
+
+def test_unpack_rejects_uppercase(tmp_path: Path):
+    pack = _build_malicious_pack(tmp_path, "MyEvilSkill")
+    with pytest.raises(PackError, match="invalid skill name"):
+        unpack_skill(pack, tmp_path / "skills")
+
+
+def test_unpack_rejects_empty_name(tmp_path: Path):
+    pack = _build_malicious_pack(tmp_path, "")
+    with pytest.raises(PackError, match="invalid skill name"):
+        unpack_skill(pack, tmp_path / "skills")
+
+
+def test_unpack_rejects_leading_dash(tmp_path: Path):
+    pack = _build_malicious_pack(tmp_path, "-rf")
+    with pytest.raises(PackError, match="invalid skill name"):
+        unpack_skill(pack, tmp_path / "skills")
+
+
+def test_unpack_accepts_clean_name(tmp_path: Path):
+    pack = _build_malicious_pack(tmp_path, "my_skill_v2")
+    name = unpack_skill(pack, tmp_path / "skills")
+    assert name == "my_skill_v2"
+    assert (tmp_path / "skills" / "my_skill_v2" / "SKILL.md").exists()

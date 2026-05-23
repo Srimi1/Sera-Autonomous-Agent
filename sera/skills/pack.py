@@ -14,6 +14,7 @@ import base64
 import hashlib
 import io
 import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -36,6 +37,11 @@ except ImportError:
 
 _SIG_FILE = "SIGNATURE.b64"
 _MANIFEST = "manifest.json"
+
+# Strict skill-name regex: lowercase letters / digits / underscore / dash,
+# 1-128 chars, no leading dot or dash. Blocks path-traversal payloads from
+# malicious YAML frontmatter (e.g. "../../etc/cron.d/x").
+_SKILL_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
 
 
 class PackError(RuntimeError):
@@ -188,9 +194,24 @@ def unpack_skill(
 
         skill_content = zf.read("SKILL.md")
 
-    # Parse skill name from YAML frontmatter.
+    # Parse skill name from YAML frontmatter and enforce the strict regex.
+    # The YAML is untrusted input — without sanitisation a malicious pack
+    # could write SKILL.md anywhere on disk by setting `name: ../../...`.
     skill_name = _parse_skill_name(skill_content)
-    dest = skills_dir / skill_name
+    if not _SKILL_NAME_RE.match(skill_name):
+        raise PackError(
+            f"invalid skill name {skill_name!r}: must match {_SKILL_NAME_RE.pattern}"
+        )
+
+    skills_dir_resolved = skills_dir.resolve()
+    dest = (skills_dir / skill_name).resolve()
+    # Defence-in-depth: even if the regex were ever relaxed, refuse any
+    # destination that escapes the skills directory.
+    if skills_dir_resolved != dest.parent:
+        raise PackError(
+            f"skill destination escapes skills_dir: {dest} not under {skills_dir_resolved}"
+        )
+
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "SKILL.md").write_bytes(skill_content)
     return skill_name
