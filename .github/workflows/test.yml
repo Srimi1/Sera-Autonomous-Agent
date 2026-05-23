@@ -1,0 +1,104 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install Sera + dev extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run pytest
+        run: pytest -q tests/
+
+  secret-scan:
+    name: secret scan (8 patterns)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan tracked files for secret patterns
+        shell: bash
+        run: |
+          set -e
+          PATTERNS=(
+            'sk-[A-Za-z0-9]{20,}'                                                         # 1. OpenAI
+            'sk-ant-[A-Za-z0-9_-]{20,}'                                                   # 2. Anthropic
+            'AKIA[0-9A-Z]{16}'                                                            # 3. AWS access keys
+            'AIza[0-9A-Za-z_-]{35}'                                                       # 4. Google / GCP
+            'gh[pousr]_[A-Za-z0-9]{36,}'                                                  # 5. GitHub PAT
+            'xox[abprs]-[A-Za-z0-9-]{10,}'                                                # 6. Slack
+            '-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY'                        # 7. PEM private
+            '(api[_-]?key|secret|token|password)[[:space:]]*[:=][[:space:]]*"[A-Za-z0-9_/+=-]{20,}"'  # 8. high-entropy literal
+          )
+          FAIL=0
+          for pat in "${PATTERNS[@]}"; do
+            hits=$(git ls-files | xargs grep -EnI --exclude='*.env.example' "$pat" 2>/dev/null || true)
+            # Drop matches inside tests/ that are obvious fixtures (contain 'test', 'fake', 'dummy', 'stub')
+            real_hits=$(echo "$hits" | grep -v -E '(tests/|test_|fake|dummy|stub|FAKE|DUMMY|STUB|AAAA+|0000+)' || true)
+            if [ -n "$real_hits" ]; then
+              echo "::error::SECRET MATCH (pattern: $pat)"
+              echo "$real_hits" | head -5
+              FAIL=1
+            fi
+          done
+          if [ "$FAIL" = "1" ]; then
+            echo "::error::secret scan tripped — investigate hits above"
+            exit 1
+          fi
+          echo "secret scan: clean"
+
+      - name: Check no sensitive files tracked
+        run: |
+          set -e
+          bad=$(git ls-files | grep -E '(^|/)\.env($|\.)|\.(key|pem|p12|pfx)$' | grep -v '\.env\.example' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::sensitive files tracked"
+            echo "$bad"
+            exit 1
+          fi
+
+  lint:
+    name: pyflakes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install pyflakes
+        run: pip install pyflakes
+
+      - name: Run pyflakes
+        run: pyflakes sera/ tests/
