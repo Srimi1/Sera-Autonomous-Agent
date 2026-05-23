@@ -16,6 +16,7 @@ from sera.llm.cache import freeze_system_prompt
 from sera.memory.session import Message, Session
 from sera.safety.approval import ApprovalGate, AutoApproveGate
 from sera.safety.redact import redact
+from sera.skills.manifest import CouncilConfig, council_skill_dispatch
 from sera.tools.base import Permission, ToolCall, ToolContext
 from sera.tools.dispatcher import execute as dispatch_execute
 from sera.tools.registry import all_tools, get as get_tool
@@ -124,6 +125,16 @@ async def _build_view(
     )
 
 
+def _council_question(call: ToolCall) -> str:
+    """Extract a natural-language question from a skill tool call's arguments."""
+    args = call.arguments or {}
+    for key in ("query", "question", "input", "prompt", "text"):
+        if key in args and isinstance(args[key], str):
+            return args[key]
+    texts = [v for v in args.values() if isinstance(v, str)]
+    return " ".join(texts) if texts else call.name
+
+
 async def run_turn(
     session: Session,
     user_msg: str,
@@ -138,6 +149,7 @@ async def run_turn(
     approval_threshold: Permission = Permission.DANGEROUS,
     compaction_target_ratio: float = 0.8,
     compaction_aggressive_ratio: float = 0.4,
+    council_config: CouncilConfig | None = None,
 ) -> str:
     """Run one full agent turn.
 
@@ -305,8 +317,13 @@ async def run_turn(
                     continue
 
             ctx = ToolContext(session_id=session.id, workspace=session.workspace)
-            result = await dispatch_execute(call, ctx)
-            sanitised = _sanitize_tool_output(result.content)
+            if council_config and call.name in council_config.council_skills:
+                question = _council_question(call)
+                synthesis = await council_skill_dispatch(question, council_config)
+                sanitised = _sanitize_tool_output(synthesis)
+            else:
+                result = await dispatch_execute(call, ctx)
+                sanitised = _sanitize_tool_output(result.content)
             sink.on_tool_end(call.name, sanitised)
             session.append(
                 Message(

@@ -2,7 +2,7 @@
 
 ## Status
 
-pending.
+done.
 
 ## Outclass claim
 
@@ -27,4 +27,4 @@ P-32.
 
 ## Notes
 
-_Journal: decisions, blockers, commit refs go here._
+2026-05-22. `sera/council/chairman.py` shipped. Borda count aggregation, pluggable cheap synthesis LLM, anonymity preserved (no model names/labels in synthesis prompt), typed `ChairmanResult`, synthesis fallback on LLM error. 69 tests pass including 50-Q parametrized suite (100% pass rate). Full suite 584/584.

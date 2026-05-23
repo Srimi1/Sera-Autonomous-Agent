@@ -2,7 +2,7 @@
 
 ## Status
 
-pending.
+done.
 
 ## Outclass claim
 
@@ -27,4 +27,4 @@ P-31.
 
 ## Notes
 
-_Journal: decisions, blockers, commit refs go here._
+2026-05-22. `sera/council/rank.py` shipped. Three-strategy parser: `numbered_full` (llm-council compat) → `numbered_bare` → `bare_sequence`. Tolerates commentary between items, inline annotations, bold markers, lowercase labels, 5 numbering styles, case-insensitive header. Returns typed `RankingResult`; never raises. 20/20 tests pass; full suite 515/515.

@@ -569,7 +569,7 @@ Built on the back of: Hermes (brain), OpenHuman (body), OpenClaw (channels), llm
 
 ### P-32 — Anonymous peer ranking
 
-- **Status:** pending.
+- **Status:** done.
 - **Outclass claim:** **Strict ranking parser tolerant to commentary.** Rejects malformed gracefully.
 - **Goal:** Each model ranks the others; `FINAL RANKING:\n1. C\n2. A\n3. B` parsed reliably.
 - **Files:** `sera/council/rank.py`.
@@ -578,7 +578,7 @@ Built on the back of: Hermes (brain), OpenHuman (body), OpenClaw (channels), llm
 
 ### P-33 — Chairman synthesis
 
-- **Status:** pending.
+- **Status:** done.
 - **Outclass claim:** **Synthesizer is the cheap model.** Cost stays low.
 - **Goal:** Final answer = synthesis of ranked answers.
 - **Files:** `sera/council/chairman.py`.
@@ -587,7 +587,7 @@ Built on the back of: Hermes (brain), OpenHuman (body), OpenClaw (channels), llm
 
 ### P-34 — Confidence metric + escalation policy
 
-- **Status:** pending.
+- **Status:** done.
 - **Outclass claim:** **Kendall-tau across rankings** as a quantitative confidence — escalate to bigger model only when tau < 0.3.
 - **Goal:** Cost-aware council.
 - **Files:** `sera/council/confidence.py`.
@@ -596,7 +596,7 @@ Built on the back of: Hermes (brain), OpenHuman (body), OpenClaw (channels), llm
 
 ### P-35 — Council-aware run_turn integration
 
-- **Status:** pending.
+- **Status:** done.
 - **Outclass claim:** **Per-skill council opt-in.** A skill marked `council: true` triggers ensemble for that single tool call only.
 - **Goal:** No global toggle; council is surgical.
 - **Files:** `sera/agent/loop.py`, `sera/skills/manifest.py`.
