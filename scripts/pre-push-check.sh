@@ -33,8 +33,13 @@ else
 fi
 
 # 3. Real PII: absolute home paths and the operator's identity.
+# Exceptions: this script (contains the patterns) and the two community-health
+# files that intentionally carry a public reporting contact chosen by the owner.
 echo "-- personal info --"
-PII=$(git grep -nIE "/Users/[a-zA-Z0-9_.-]+|/home/[a-zA-Z0-9_.-]+|srijan|srimi" -- . "$EXCL" ":(exclude)scripts/pre-push-check.sh" 2>/dev/null || true)
+PII=$(git grep -nIE "/Users/[a-zA-Z0-9_.-]+|/home/[a-zA-Z0-9_.-]+|srijan|srimi" -- . "$EXCL" \
+  ":(exclude)scripts/pre-push-check.sh" \
+  ":(exclude)CODE_OF_CONDUCT.md" \
+  ":(exclude)SECURITY.md" 2>/dev/null || true)
 if [ -n "$PII" ]; then
   echo "${YEL}REVIEW${RST}: home paths / operator name in tracked files:"; echo "$PII" | sed 's/^/  /'
   fail=1
