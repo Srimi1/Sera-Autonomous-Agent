@@ -4,4 +4,4 @@ script:
   - text: "Hi! How can I help today?"
 expect:
   substring: "Hi"
-tags: [smoke, no-tools]
+tags: [golden, smoke, no-tools]

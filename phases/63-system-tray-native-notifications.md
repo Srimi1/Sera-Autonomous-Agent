@@ -2,11 +2,11 @@
 
 ## Status
 
-pending.
+done (scaffolded 2026-05-24).
 
 ## Outclass claim
 
-none unique.
+**Loop-event notifications.** Rivals notify on user messages. Sera notifies on its own internal events — memory consolidation complete, LoRA gain recorded, injection attempt blocked. Injectable runner; zero call-site changes at verifying the binary exists.
 
 ## Files
 

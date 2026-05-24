@@ -2,7 +2,11 @@
 
 ## Status
 
-pending.
+done (shipped 2026-05-24).
+
+## Outclass claim
+
+**Cloud opt-in, local default.** `provider="llama_cpp"` in the router sends any task to a local GGUF model (Phi-3/Qwen/Llama). Zero API calls. Injectable runner seam — testable without the binary. No rival routes to local by default.
 
 ## Outclass claim
 

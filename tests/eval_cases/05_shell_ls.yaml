@@ -13,4 +13,4 @@ script:
 expect:
   substring: "a.txt"
   tool_calls: [shell_run]
-tags: [shell]
+tags: [golden, shell]

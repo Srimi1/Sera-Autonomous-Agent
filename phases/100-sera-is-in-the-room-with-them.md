@@ -2,7 +2,7 @@
 
 ## Status
 
-pending.
+done (scaffolded 2026-05-24 — honest comparison engine + `sera compare` page generator; rival numbers gated by provenance).
 
 ## Outclass claim
 

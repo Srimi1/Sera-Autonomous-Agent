@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sera</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      width: 300px;
+      padding: 16px;
+      margin: 0;
+      background: #0f0f0f;
+      color: #e8e8e8;
+    }
+    h1 { font-size: 16px; margin: 0 0 12px; letter-spacing: 0.05em; }
+    #status { font-size: 13px; color: #888; min-height: 20px; margin-bottom: 12px; }
+    #status.ok  { color: #4caf50; }
+    #status.err { color: #f44336; }
+    button {
+      width: 100%;
+      padding: 10px;
+      background: #1a1a2e;
+      color: #e8e8e8;
+      border: 1px solid #333;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.15s;
+    }
+    button:hover { background: #252540; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    label { font-size: 12px; color: #666; display: block; margin-bottom: 4px; }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 7px 9px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #e8e8e8;
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>SERA</h1>
+  <div id="status">Ready.</div>
+
+  <label for="token-input">Bearer token</label>
+  <input id="token-input" type="password" placeholder="sera-token-…" autocomplete="off" />
+
+  <label for="server-input">Server</label>
+  <input id="server-input" type="text" value="http://127.0.0.1:8765" />
+
+  <button id="ingest-btn">Ingest this page</button>
+
+  <script src="popup.js"></script>
+</body>
+</html>

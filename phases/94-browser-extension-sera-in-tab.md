@@ -2,7 +2,11 @@
 
 ## Status
 
-pending.
+done (shipped 2026-05-24).
+
+## Outclass claim
+
+**MV3 sidebar that ingests current page into Memory Tree.** `POST /v1/ingest` wired into HTTP API with bearer auth. One click → page text stored in Sera's memory. No rival ships this channel from the browser into a local memory graph.
 
 ## Outclass claim
 

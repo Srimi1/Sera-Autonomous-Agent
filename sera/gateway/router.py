@@ -149,8 +149,13 @@ class Router:
     # Single-event dispatch (the agent-aware path)
     # ------------------------------------------------------------------
 
-    async def dispatch(self, event: InboundEvent) -> OutboundResponse:
-        """Run one event through the full primitive chain."""
+    async def dispatch(self, event: InboundEvent, *, sink: Any = None) -> OutboundResponse:
+        """Run one event through the full primitive chain.
+
+        sink: optional TokenSink (P-62). When provided, the turn streams tokens
+        and tool-call lifecycle events through it as they happen, so callers
+        (the SSE endpoint) can deliver first token before the turn completes.
+        """
         self._n_handled += 1
 
         # Memory ingest hook — fire-and-forget; failures don't block dispatch.
@@ -208,6 +213,7 @@ class Router:
                 session,
                 event.text,
                 llm,
+                sink=sink,
                 approval=AutoApproveGate(allow=True),
                 budget=budget,
                 council_config=self._council_config,

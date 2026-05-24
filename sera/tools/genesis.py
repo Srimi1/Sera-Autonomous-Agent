@@ -254,6 +254,7 @@ async def mypy_check(file_path: Path, *, timeout: float = 30.0) -> tuple[bool, s
 
 _DRY_RUN_DRIVER = """\
 import sys, importlib.util
+sys.path.insert(0, {sera_root!r})  # generated tools import sera.tools.base
 spec = importlib.util.spec_from_file_location("_genesis_dryrun", {path!r})
 mod = importlib.util.module_from_spec(spec)
 try:
@@ -263,6 +264,10 @@ except Exception as exc:
     print(f"DRY_RUN_FAIL: {{type(exc).__name__}}: {{exc}}")
     sys.exit(2)
 """
+
+# Repo root that contains the `sera` package — baked into the dry-run driver so
+# the sandbox subprocess can resolve `import sera.*` even with a stripped env.
+_SERA_ROOT = str(Path(__file__).resolve().parents[2])
 
 
 async def sandbox_dry_run(file_path: Path, *, timeout: float = 10.0) -> tuple[bool, str]:
@@ -274,7 +279,7 @@ async def sandbox_dry_run(file_path: Path, *, timeout: float = 10.0) -> tuple[bo
     """
     from sera.sandbox.local import LocalSubprocessSandbox
 
-    driver = _DRY_RUN_DRIVER.format(path=str(file_path))
+    driver = _DRY_RUN_DRIVER.format(path=str(file_path), sera_root=_SERA_ROOT)
     sandbox = LocalSubprocessSandbox()
     # The driver imports `sera.tools.*` modules — allow it past the network gate
     # (none of the sera imports are network modules).

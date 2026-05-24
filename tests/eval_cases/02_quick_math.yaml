@@ -5,4 +5,4 @@ script:
 expect:
   substring: "4"
   forbid_tool_calls: [shell_run, python_eval]
-tags: [no-tools]
+tags: [golden, no-tools]

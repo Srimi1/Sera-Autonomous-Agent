@@ -2,7 +2,7 @@
 
 ## Status
 
-pending.
+done.
 
 ## Outclass claim
 
@@ -10,11 +10,11 @@ pending.
 
 ## Files
 
-`sera/eval/regress.py`.
+`sera/eval/regress.py`, `tests/test_regress.py` — 20 tests.
 
 ## Verification
 
-bad LoRA never promotes.
+Bad LoRA (score ≤ baseline) never promotes; good LoRA (score > baseline) always does; first night promotes unconditionally; baseline = last night not historical peak.
 
 ## Dependencies
 

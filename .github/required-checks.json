@@ -1,0 +1,11 @@
+{
+  "branch": "main",
+  "strict": true,
+  "contexts": [
+    "eval / golden",
+    "eval / jailbreak",
+    "pytest (Python 3.11)",
+    "secret scan (8 patterns)"
+  ],
+  "enforce_admins": true
+}

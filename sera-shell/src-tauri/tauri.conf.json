@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/1",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "devPath": "http://localhost:5173",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "Sera",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": { "sidecar": true, "scope": [] }
+    },
+    "windows": [
+      {
+        "title": "Sera",
+        "width": 420,
+        "height": 640,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "systemTray": {
+      "iconPath": "icons/tray.png",
+      "iconAsTemplate": true
+    },
+    "bundle": {
+      "active": true,
+      "identifier": "com.sera.shell",
+      "targets": ["dmg", "msi", "deb"]
+    },
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:11111"
+    }
+  }
+}

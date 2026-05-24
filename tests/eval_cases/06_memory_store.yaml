@@ -11,4 +11,4 @@ script:
 expect:
   substring: "Saved"
   tool_calls: [memory_store]
-tags: [memory]
+tags: [golden, memory]

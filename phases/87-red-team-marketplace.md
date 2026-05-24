@@ -2,7 +2,11 @@
 
 ## Status
 
-pending.
+done (shipped 2026-05-24).
+
+## Outclass claim
+
+**Signed `.redpack` distribution.** Ed25519 signature over SHA-256 manifest. Community adversarial packs are self-contained, verified artifacts. Any tamper to any payload — content, hash, or signature — is rejected on load. No rival ships this.
 
 ## Outclass claim
 

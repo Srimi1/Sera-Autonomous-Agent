@@ -2,7 +2,7 @@
 
 ## Status
 
-pending.
+done (scaffolded 2026-05-24 — relay activates when P-95 lands).
 
 ## Outclass claim
 

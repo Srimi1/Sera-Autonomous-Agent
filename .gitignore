@@ -131,3 +131,9 @@ ruvector.db
 .ruflo/
 audit-out/
 graphify-out/
+
+# --- RuVector / AgentDB runtime databases (accumulate private memory + embeddings) ---
+*.rvf
+*.rvf.lock
+agentdb.rvf
+agentdb.rvf.lock

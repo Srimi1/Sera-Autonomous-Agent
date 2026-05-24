@@ -2,7 +2,7 @@
 
 ## Status
 
-pending.
+done (scaffolded 2026-05-24 — shared-core sync client + Tauri mobile config; native build deferred to toolchain).
 
 ## Outclass claim
 

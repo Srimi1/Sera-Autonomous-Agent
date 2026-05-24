@@ -21,9 +21,10 @@ Single source of truth. This `phases/` folder contains one slim mirror file per 
 
 ## Status snapshot
 
-- ✅ Done: P-01, P-02, P-03, P-04
-- ⏳ Active: P-05 — Mid-turn context compression (next)
-- ⏸ Pending: P-06 .. P-100
+- ✅ Suite green: **2021 passed, 0 failed.** P-48 runtime tool-gen fixed (dry-run subprocess now resolves `sera` via baked repo-root) — the flagship self-extension outclass passes its own e2e tests.
+- ✅ Done (proven): ~62 phases — mechanism executes in passing tests (encrypted approval vault, causal-edge graph, CRDT merge, Ed25519 packs, audit chain, council, chaos monkey, …)
+- 📦 Deferred to native toolchain (~22): Tauri desktop/mobile (P-61/65/66/67/95), voice binaries (P-68/69), real local models + mlx LoRA (P-73/74/93), GitHub branch-protection apply (P-90), Rust compile (P-98), native installer + 5-min timing (P-99). Python seams complete + tested; real capability unproven until the toolchain runs.
+- 🟡 Honesty pass: P-81 re-headlined (heuristics matching DistilBERT-class recall, no phantom .onnx); P-98 downgraded to `scaffolded` (3× is a target, not a measurement — Rust uncompiled).
 
 ## Workflow
 

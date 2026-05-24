@@ -1,0 +1,42 @@
+{
+  "product": "Sera",
+  "version": "0.1.0",
+  "identifier": "com.sera.desktop",
+  "first_reply_budget_seconds": 300,
+  "targets": [
+    {
+      "os": "macos",
+      "format": "dmg",
+      "arch": ["aarch64", "x86_64"],
+      "codesign": {
+        "required": true,
+        "identity_env": "MACOS_SIGNING_IDENTITY",
+        "notarize": true,
+        "notarize_creds_env": ["APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID"]
+      }
+    },
+    {
+      "os": "windows",
+      "format": "msi",
+      "arch": ["x86_64"],
+      "codesign": {
+        "required": true,
+        "cert_env": "WINDOWS_CERT_BASE64",
+        "cert_password_env": "WINDOWS_CERT_PASSWORD"
+      }
+    },
+    {
+      "os": "linux",
+      "format": "deb",
+      "arch": ["x86_64", "aarch64"],
+      "codesign": {
+        "required": false
+      }
+    }
+  ],
+  "bundled": [
+    "sera-core (sidecar binary)",
+    "sera-shell (Tauri app)",
+    "default config + onboarding"
+  ]
+}

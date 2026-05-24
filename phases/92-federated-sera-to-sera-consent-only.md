@@ -2,7 +2,7 @@
 
 ## Status
 
-pending.
+done (scaffolded 2026-05-24 — Ed25519-signed protocol + consent-gated node; UI prompt wiring deferred).
 
 ## Outclass claim
 

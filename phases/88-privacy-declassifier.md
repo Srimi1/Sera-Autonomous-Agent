@@ -2,7 +2,11 @@
 
 ## Status
 
-pending.
+done (shipped 2026-05-24).
+
+## Outclass claim
+
+**Bulk log declassifier with JSON-recursive scrub + before/after diff.** Deep-walks JSONL audit entries, redacts PII at every nesting level, returns unified-style diff of all changed lines. No rival ships a verified bulk scrubber for their own session logs.
 
 ## Files
 

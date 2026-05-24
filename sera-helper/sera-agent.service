@@ -1,0 +1,15 @@
+[Unit]
+Description=Sera personal agent daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=__SERA_BIN__ serve --port 8765
+Restart=on-failure
+RestartSec=10
+Environment=SERA_HOME=__SERA_HOME__
+StandardOutput=append:__SERA_HOME__/logs/agent.log
+StandardError=append:__SERA_HOME__/logs/agent.err
+
+[Install]
+WantedBy=default.target

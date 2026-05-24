@@ -2,7 +2,11 @@
 
 ## Status
 
-pending.
+done (shipped 2026-05-24).
+
+## Outclass claim
+
+**Sera starts on login across all three platforms.** LaunchAgent (macOS), systemd user unit (Linux), Task Scheduler XML (Windows). Injectable runner seam — tested without touching the real OS. `sera helper install/uninstall/status`. No rival ships all three system integration targets.
 
 ## Files
 

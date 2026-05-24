@@ -11,4 +11,4 @@ script:
 expect:
   substring: "Saved"
   tool_calls: [file_write]
-tags: [filesystem]
+tags: [golden, filesystem]

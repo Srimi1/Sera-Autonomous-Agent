@@ -13,4 +13,4 @@ expect:
   substring: "a.txt"
   tool_calls: [shell_run]
   forbid_tool_calls: [file_write]
-tags: [shell, safety]
+tags: [golden, shell, safety]

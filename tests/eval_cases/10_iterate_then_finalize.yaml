@@ -19,4 +19,4 @@ expect:
   substring: "Summary"
   tool_calls: [file_read]
   min_iterations: 3
-tags: [filesystem, multi-step]
+tags: [golden, filesystem, multi-step]

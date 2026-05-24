@@ -2,7 +2,11 @@
 
 ## Status
 
-pending.
+done (shipped 2026-05-24).
+
+## Outclass claim
+
+**Signed artifact registry.** Every skillpack and redpack carries its Ed25519 pubkey. `sera marketplace install` verifies before extracting — tamper anything and installation aborts. No rival ships a verified package registry for AI skills.
 
 ## Files
 

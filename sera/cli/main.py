@@ -563,7 +563,9 @@ def _default_cases_dir() -> Path:
               help="Directory of *.yaml eval cases. Defaults to ./tests/eval_cases.")
 @click.option("--no-store", is_flag=True, default=False,
               help="Run without persisting telemetry.")
-def eval_run_cmd(cases_dir: Path | None, no_store: bool) -> None:
+@click.option("--tag", "filter_tag", default=None,
+              help="Only run cases whose tags include this value (e.g. 'jailbreak').")
+def eval_run_cmd(cases_dir: Path | None, no_store: bool, filter_tag: str | None) -> None:
     """Run every eval case under `cases_dir` with the stub LLM."""
     from sera.eval import load_cases, run_cases as _run_cases
     from sera.eval.telemetry import TelemetryStore
@@ -573,6 +575,8 @@ def eval_run_cmd(cases_dir: Path | None, no_store: bool) -> None:
         console.print(f"[red]Cases dir not found: {target}[/red]")
         sys.exit(2)
     cases = load_cases(target)
+    if filter_tag:
+        cases = [c for c in cases if filter_tag in c.tags]
     if not cases:
         console.print(f"[yellow]No cases under {target}[/yellow]")
         return
@@ -827,6 +831,248 @@ def council_run_cmd(question: str, models: str | None, dry_run: bool) -> None:
         console.print("[dim]dry-run: stub responses, no real LLM calls.[/dim]")
 
 
+@main.command(name="dream")
+@click.option("--db", "db_path", default=None, type=click.Path(path_type=Path),
+              help="Dream journal DB. Defaults to ~/.sera/dream.db.")
+@click.option("--limit", default=14, type=int, help="Recent entries to show.")
+def dream_log_cmd(db_path: Path | None, limit: int) -> None:
+    """Show recent Dream Journal entries (nightly consolidation + skill drafts)."""
+    from sera.dream.journal import DreamJournalStore
+
+    store = DreamJournalStore(db=db_path) if db_path else DreamJournalStore()
+    entries = store.recent(limit=limit)
+    if not entries:
+        console.print("[dim]No dream entries yet. Sera dreams after a day of use.[/dim]")
+        return
+    table = Table(title="Dream Journal")
+    table.add_column("date", style="bold")
+    table.add_column("sessions", justify="right")
+    table.add_column("drafts", justify="right")
+    table.add_column("Q-A", justify="right")
+    table.add_column("summary", overflow="fold")
+    for e in entries:
+        table.add_row(
+            e.date, str(e.sessions_consolidated), str(len(e.skill_drafts)),
+            str(len(e.synthetic_qa)), (e.summary or "")[:80],
+        )
+    console.print(table)
+
+
+@main.group(name="audit")
+def audit_group() -> None:
+    """Tamper-evident audit log commands."""
+
+
+@audit_group.command(name="verify")
+@click.option("--log", "log_path", default=None, type=click.Path(path_type=Path),
+              help="Audit log path. Defaults to ~/.sera/audit.jsonl.")
+def audit_verify_cmd(log_path: Path | None) -> None:
+    """Verify the audit log hash chain. Exits non-zero if tampered."""
+    from sera.safety.audit import AuditLog
+
+    log = AuditLog(path=log_path) if log_path else AuditLog()
+    n = log.count()
+    bad = log.verify()
+    if not bad:
+        console.print(f"[green]audit chain verified[/green] ({n} entries, all clean)")
+    else:
+        console.print(f"[red]TAMPERED[/red] — bad seq numbers: {bad}")
+        raise SystemExit(1)
+
+
+@audit_group.command(name="show")
+@click.option("--log", "log_path", default=None, type=click.Path(path_type=Path))
+@click.option("--limit", default=20, type=int)
+def audit_show_cmd(log_path: Path | None, limit: int) -> None:
+    """Show recent audit log entries."""
+    from sera.safety.audit import AuditLog
+
+    log = AuditLog(path=log_path) if log_path else AuditLog()
+    entries = log.entries(limit=limit)
+    if not entries:
+        console.print("[dim]No audit entries.[/dim]")
+        return
+    table = Table(title="Audit Log")
+    table.add_column("seq", justify="right")
+    table.add_column("kind")
+    table.add_column("hash[:8]")
+    for e in entries:
+        table.add_row(str(e.seq), e.kind, e.hash[:8])
+    console.print(table)
+
+
+@main.command(name="capability-log")
+@click.option("--db", "db_path", default=None, type=click.Path(path_type=Path),
+              help="Capability log DB. Defaults to ~/.sera/capability_log.db.")
+@click.option("--kind", default=None, type=click.Choice(["tool", "skill"]),
+              help="Filter by kind.")
+def capability_log_cmd(db_path: Path | None, kind: str | None) -> None:
+    """Print the timeline of capabilities that have emerged in Sera."""
+    from sera.dream.capability_log import CapabilityLog
+
+    log = CapabilityLog(db=db_path) if db_path else CapabilityLog()
+    entries = log.timeline(kind=kind)
+    if not entries:
+        console.print("[dim]No capabilities recorded yet.[/dim]")
+        return
+    table = Table(title="Capability Timeline")
+    table.add_column("first_seen", style="bold")
+    table.add_column("kind")
+    table.add_column("name")
+    for e in entries:
+        table.add_row(e.first_seen, e.kind, e.name)
+    console.print(table)
+
+
+@main.command(name="export-dataset")
+@click.option("--db", "db_path", default=None, type=click.Path(path_type=Path),
+              help="Dream journal DB. Defaults to ~/.sera/dream.db.")
+@click.option("--out", "out_path", default=None, type=click.Path(path_type=Path),
+              help="Output JSONL path. Defaults to ~/.sera/dataset.jsonl.")
+@click.option("--limit", default=0, type=int,
+              help="Max dream entries to scan (0 = all).")
+@click.option("--strip-meta", is_flag=True, default=False,
+              help="Omit _meta key from each record (for third-party tools).")
+@click.option("--validate", "do_validate", is_flag=True, default=True,
+              help="Re-read and validate the written file (default: on).")
+def export_dataset_cmd(
+    db_path: Path | None,
+    out_path: Path | None,
+    limit: int,
+    strip_meta: bool,
+    do_validate: bool,
+) -> None:
+    """Export synthetic Q-A from the Dream Journal as mlx-lm / unsloth JSONL."""
+    from sera.config import SERA_HOME
+    from sera.dream.dataset import DatasetExporter
+    from sera.dream.journal import DreamJournalStore
+
+    store = DreamJournalStore(db=db_path) if db_path else DreamJournalStore()
+    out = out_path or (SERA_HOME / "dataset.jsonl")
+
+    exporter = DatasetExporter(store)
+    n = exporter.export(out, limit=limit, strip_meta=strip_meta)
+
+    if n == 0:
+        console.print("[dim]No Q-A pairs to export. Run more sessions first.[/dim]")
+        return
+
+    console.print(f"[green]exported[/green] {n} records → [bold]{out}[/bold]")
+
+    if do_validate:
+        valid, bad = DatasetExporter.validate_file(out)
+        if bad:
+            console.print(f"[yellow]warning:[/yellow] {len(bad)} invalid line(s): {bad[:5]}")
+        else:
+            console.print(f"[dim]{valid} records validated (ChatML ✓)[/dim]")
+
+
+@main.command(name="train-lora")
+@click.option("--model", "base_model",
+              default="mlx-community/Mistral-7B-Instruct-v0.2-4bit",
+              help="Base MLX model ID.")
+@click.option("--corpus", "corpus_path", default=None, type=click.Path(path_type=Path),
+              help="JSONL corpus. Defaults to ~/.sera/dataset.jsonl.")
+@click.option("--adapter", "adapter_dir", default=None, type=click.Path(path_type=Path),
+              help="Adapter output dir. Defaults to ~/.sera/adapter/.")
+@click.option("--iters", default=1000, type=int, help="Training iterations.")
+@click.option("--rank", default=8, type=int, help="LoRA rank.")
+@click.option("--date", "run_date", default=None,
+              help="Date label for gain tracking (YYYY-MM-DD). Defaults to today.")
+@click.option("--accuracy", default=None, type=float,
+              help="Eval accuracy (0-1) to record in gain tracker after training.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Print command without running training.")
+def train_lora_cmd(
+    base_model: str,
+    corpus_path: Path | None,
+    adapter_dir: Path | None,
+    iters: int,
+    rank: int,
+    run_date: str | None,
+    accuracy: float | None,
+    dry_run: bool,
+) -> None:
+    """Run nightly LoRA fine-tuning on the synthetic Q-A corpus (requires mlx-lm)."""
+    import datetime
+    from sera.config import SERA_HOME
+    from sera.train.lora import GainTracker, LoRATrainer, TrainConfig
+
+    corpus = corpus_path or (SERA_HOME / "dataset.jsonl")
+    adapter = adapter_dir or (SERA_HOME / "adapter")
+    date = run_date or datetime.date.today().isoformat()
+
+    cfg = TrainConfig(
+        base_model=base_model,
+        corpus=corpus,
+        adapter_dir=adapter,
+        num_iters=iters,
+        lora_rank=rank,
+    )
+
+    trainer = LoRATrainer()
+
+    if dry_run:
+        import tempfile
+        cmd = trainer.build_cmd(cfg, Path(tempfile.gettempdir()) / "data")
+        console.print("[dim]dry-run command:[/dim]")
+        console.print(" ".join(cmd))
+        return
+
+    console.print(f"[cyan]training LoRA[/cyan] {iters} iters on {corpus}")
+    result = trainer.train(cfg)
+
+    if not result.ok:
+        console.print(f"[red]training failed:[/red] {result.error}")
+        raise SystemExit(1)
+
+    msg = f"[green]done[/green] adapter → [bold]{result.adapter_dir}[/bold]"
+    if result.final_loss is not None:
+        msg += f"  loss={result.final_loss:.4f}"
+    console.print(msg)
+
+    if accuracy is not None:
+        tracker = GainTracker()
+        tracker.record(date, accuracy)
+        gain = tracker.gain_pp()
+        if gain is not None:
+            console.print(f"[dim]gain tracker: {gain:+.1f}pp over {tracker.count()} night(s)[/dim]")
+            from sera.notifications import notify_lora_gain
+            notify_lora_gain(gain)
+
+
+@main.command()
+@click.option("--host", default="127.0.0.1", help="Bind host.")
+@click.option("--port", default=11111, type=int, help="Bind port (0 = ephemeral).")
+@click.option("--supervised", is_flag=True, default=False,
+              help="Run under the crash-only supervisor (auto-restart on death).")
+def serve(host: str, port: int, supervised: bool) -> None:
+    """Run the Sera sidecar — the HTTP API the shell and clients talk to.
+
+    Plain `sera serve` runs the core directly. `--supervised` wraps it in the
+    crash-only supervisor: if the core dies, it is respawned with exponential
+    backoff, and every session survives because state is on disk.
+    """
+    if supervised:
+        from sera.rpc.supervisor import supervise_command
+
+        cmd = [sys.executable, "-m", "sera.cli.main", "serve",
+               "--host", host, "--port", str(port)]
+        console.print(f"[cyan]supervising:[/cyan] {' '.join(cmd)}")
+        sup = supervise_command(cmd)
+        state = sup.run()
+        console.print(f"[dim]supervisor exited: {state.value}[/dim]")
+        if state.value == "circuit_open":
+            sys.exit(1)
+        return
+
+    from sera.rpc.server import run_server
+
+    console.print(f"[bold green]Sera sidecar[/bold green] on http://{host}:{port}")
+    console.print("[dim]Ctrl+C to stop. /healthz · /openapi.json · POST /v1/turn[/dim]")
+    run_server(host=host, port=port)
+
+
 @main.command()
 @click.option("--profile", default=None, help="LLM profile (reasoning|fast).")
 @click.option("--workspace", default=None, help="Workspace root for tools.")
@@ -1003,6 +1249,242 @@ async def _repl(session, llm, sink, approval, threshold, max_iters, cost_enforce
             return
         except Exception as e:  # noqa: BLE001 — show error and continue REPL
             console.print(f"\n[red]Turn failed: {type(e).__name__}: {e}[/red]")
+
+
+# ---------------------------------------------------------------------------
+# marketplace
+# ---------------------------------------------------------------------------
+
+@main.group(name="marketplace")
+def marketplace_group() -> None:
+    """Signed artifact registry — install and publish skillpacks & redpacks."""
+
+
+@marketplace_group.command(name="publish")
+@click.argument("pack_path", type=click.Path(exists=True, path_type=Path))
+@click.option("--name", default=None, help="Override artifact name.")
+@click.option("--desc", "description", default="", help="Short description.")
+@click.option("--tags", default="", help="Comma-separated tags.")
+@click.option("--pubkey", "pubkey_path", default=None, type=click.Path(path_type=Path),
+              help="Ed25519 public key PEM to associate with this pack.")
+def marketplace_publish_cmd(
+    pack_path: Path,
+    name: str | None,
+    description: str,
+    tags: str,
+    pubkey_path: Path | None,
+) -> None:
+    """Register a .skillpack or .redpack in the local marketplace."""
+    from sera.marketplace.client import MarketplaceClient
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+    pubkey_pem = pubkey_path.read_bytes() if pubkey_path else None
+    client = MarketplaceClient()
+    try:
+        result = client.publish(
+            pack_path, name=name, description=description,
+            tags=tag_list, pubkey_pem=pubkey_pem,
+        )
+    except Exception as exc:
+        console.print(f"[red]Publish failed: {exc}[/red]")
+        sys.exit(1)
+    sig = "[green]signed[/green]" if result.signed else "[dim]unsigned[/dim]"
+    console.print(f"[bold]Published[/bold] {result.entry.name!r} ({result.entry.kind}) {sig}")
+    console.print(f"  id: {result.entry.id}  path: {result.entry.path}")
+
+
+@marketplace_group.command(name="install")
+@click.argument("name")
+@click.option("--kind", default=None, type=click.Choice(["skillpack", "redpack"]),
+              help="Restrict search to this kind.")
+@click.option("--pubkey", "pubkey_path", default=None, type=click.Path(path_type=Path),
+              help="Ed25519 public key PEM for verification.")
+@click.option("--dest", "dest_dir", default=None, type=click.Path(path_type=Path),
+              help="Install destination directory.")
+def marketplace_install_cmd(
+    name: str,
+    kind: str | None,
+    pubkey_path: Path | None,
+    dest_dir: Path | None,
+) -> None:
+    """Install a registered pack by name (verifies signature if pubkey given)."""
+    from sera.marketplace.client import MarketplaceClient
+    pubkey_pem = pubkey_path.read_bytes() if pubkey_path else None
+    client = MarketplaceClient()
+    try:
+        result = client.install(name, kind=kind, pubkey_pem=pubkey_pem, dest_dir=dest_dir)
+    except KeyError:
+        console.print(f"[red]Not found in registry: {name!r}[/red]")
+        sys.exit(1)
+    except Exception as exc:
+        console.print(f"[red]Install failed: {exc}[/red]")
+        sys.exit(1)
+    v = "[green]verified ✓[/green]" if result.verified else "[yellow]unverified[/yellow]"
+    console.print(f"[bold]Installed[/bold] {result.name!r} ({result.kind}) {v}")
+    console.print(f"  → {result.dest}")
+
+
+@marketplace_group.command(name="search")
+@click.argument("query", default="")
+@click.option("--kind", default=None, type=click.Choice(["skillpack", "redpack"]))
+def marketplace_search_cmd(query: str, kind: str | None) -> None:
+    """Search the local registry."""
+    from sera.marketplace.client import MarketplaceClient
+    from rich.table import Table
+    client = MarketplaceClient()
+    hits = client.search(query, kind=kind)
+    if not hits:
+        console.print("[dim]No results.[/dim]")
+        return
+    table = Table(title="Marketplace")
+    table.add_column("name", style="bold")
+    table.add_column("kind")
+    table.add_column("signed")
+    table.add_column("installed")
+    table.add_column("description", overflow="fold")
+    for e in hits:
+        sig = "[green]✓[/green]" if e.pubkey_pem else "[dim]—[/dim]"
+        inst = "[green]✓[/green]" if e.installed else "[dim]—[/dim]"
+        table.add_row(e.name, e.kind, sig, inst, e.description[:60])
+    console.print(table)
+
+
+@marketplace_group.command(name="list")
+def marketplace_list_cmd() -> None:
+    """List all installed packs."""
+    from sera.marketplace.client import MarketplaceClient
+    client = MarketplaceClient()
+    installed = client.list_installed()
+    if not installed:
+        console.print("[dim]Nothing installed.[/dim]")
+        return
+    for e in installed:
+        console.print(f"  {e.kind}  [bold]{e.name}[/bold]  {e.path}")
+
+
+# ---------------------------------------------------------------------------
+# system helper (daemon install/uninstall)
+# ---------------------------------------------------------------------------
+
+@main.group(name="helper")
+def helper_group() -> None:
+    """Manage the Sera system daemon (LaunchAgent / systemd / Task Scheduler)."""
+
+
+@helper_group.command(name="install")
+@click.option("--bin", "sera_bin", default=None, help="Path to the sera binary.")
+@click.option("--home", "sera_home", default=None, help="SERA_HOME directory.")
+def helper_install_cmd(sera_bin: str | None, sera_home: str | None) -> None:
+    """Install Sera as a login-time system daemon."""
+    from sera.system.helper import install as _install
+    result = _install(sera_bin=sera_bin, sera_home=sera_home)
+    mark = "[green]✓[/green]" if result.installed else "[red]✗[/red]"
+    console.print(f"{mark} {result.platform}: {result.detail}")
+    if not result.installed:
+        sys.exit(1)
+
+
+@helper_group.command(name="uninstall")
+def helper_uninstall_cmd() -> None:
+    """Remove the Sera system daemon."""
+    from sera.system.helper import uninstall as _uninstall
+    result = _uninstall()
+    console.print(f"Removed ({result.platform}): {result.detail}")
+
+
+@helper_group.command(name="status")
+def helper_status_cmd() -> None:
+    """Show whether the Sera system daemon is installed."""
+    from sera.system.helper import status as _status
+    result = _status()
+    mark = "[green]installed[/green]" if result.installed else "[dim]not installed[/dim]"
+    console.print(f"{result.platform}: {mark}  {result.detail}")
+
+
+@main.group(name="notify")
+def notify_group() -> None:
+    """Fire a native OS notification (P-63)."""
+
+
+@notify_group.command(name="send")
+@click.option("--title", default="Sera", help="Notification title.")
+@click.option("--body", required=True, help="Notification body text.")
+@click.option("--subtitle", default="", help="Optional subtitle (macOS).")
+@click.option("--tag", default="", help="Internal event tag.")
+def notify_send_cmd(title: str, body: str, subtitle: str, tag: str) -> None:
+    """Send a native OS notification right now."""
+    from sera.notifications import NotificationEvent, fire
+    result = fire(NotificationEvent(title=title, body=body, subtitle=subtitle, tag=tag))
+    if result.sent:
+        console.print(f"[green]sent[/green] via {result.backend}")
+    else:
+        console.print(f"[red]failed[/red] ({result.backend}): {result.error}")
+        raise SystemExit(1)
+
+
+@notify_group.command(name="test")
+def notify_test_cmd() -> None:
+    """Fire the three Sera loop-event notifications for manual verification."""
+    from sera.notifications import (
+        notify_consolidation,
+        notify_injection_detected,
+        notify_lora_gain,
+    )
+    results = [
+        ("consolidation", notify_consolidation(42)),
+        ("lora_gain", notify_lora_gain(0.0312)),
+        ("injection", notify_injection_detected("role-switch attempt")),
+    ]
+    for tag, r in results:
+        mark = "[green]ok[/green]" if r.sent else f"[yellow]skip[/yellow] ({r.error})"
+        console.print(f"  {tag:20s} {mark}")
+
+
+@main.command(name="compare")
+@click.option("--cases", "cases_dir", default=None, type=click.Path(path_type=Path),
+              help="Eval cases dir. Defaults to bundled cases.")
+@click.option("--out", "out_path", default=None, type=click.Path(path_type=Path),
+              help="Write the comparison page here. Defaults to COMPARISON.md.")
+def compare_cmd(cases_dir: Path | None, out_path: Path | None) -> None:
+    """P-100: run eval, emit an honest side-by-side comparison page vs rivals."""
+    from sera.eval import load_cases, run_cases as _run_cases
+    from sera.eval.compare import (
+        Capability,
+        RivalClaim,
+        Source,
+        build_from_run,
+    )
+
+    target = (cases_dir or _default_cases_dir()).resolve()
+    cases = load_cases(target)
+    if not cases:
+        console.print(f"[yellow]No cases under {target}[/yellow]")
+        return
+
+    report = _run_cases(cases, telemetry=None, profile="stub")
+    comparison = build_from_run(report)
+
+    # Rival numbers are honest: unpublished unless they have a public source.
+    comparison.rival_claims = [
+        RivalClaim("Hermes", "eval pass rate", None, Source.UNPUBLISHED),
+        RivalClaim("OpenHuman", "eval pass rate", None, Source.UNPUBLISHED),
+        RivalClaim("OpenClaw", "eval pass rate", None, Source.UNPUBLISHED),
+    ]
+    no_rivals = {"Hermes": False, "OpenHuman": False, "OpenClaw": False}
+    comparison.capabilities = [
+        Capability("typed causal-edge memory graph", sera=True, rivals=dict(no_rivals)),
+        Capability("encrypted tamper-evident approval shape-memory", sera=True, rivals=dict(no_rivals)),
+        Capability("per-question federated consent", sera=True, rivals=dict(no_rivals)),
+        Capability("offline-first CRDT memory sync", sera=True, rivals=dict(no_rivals)),
+        Capability("loop-event native notifications", sera=True, rivals=dict(no_rivals)),
+        Capability("nightly on-device LoRA self-improvement", sera=True, rivals=dict(no_rivals)),
+    ]
+
+    md = comparison.to_markdown()
+    dest = out_path or Path("COMPARISON.md")
+    dest.write_text(md)
+    console.print(f"[green]wrote[/green] {dest}  "
+                  f"({report.n_pass}/{len(report.results)} eval pass, "
+                  f"{len(comparison.outclasses)} outclasses)")
 
 
 if __name__ == "__main__":

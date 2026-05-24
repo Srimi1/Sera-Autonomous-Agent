@@ -2,15 +2,15 @@
 
 ## Status
 
-pending.
+done.
 
 ## Files
 
-`sera/memory/migrations/`.
+`sera/memory/migrations/__init__.py`, `sera/memory/migrations/runner.py`, `tests/test_migrations.py` — 13 tests.
 
 ## Verification
 
-P-11 snapshot migrates to current without data loss.
+P-11 snapshot (v1 schema + data) migrated to v4 (current) without data loss (test_v1_snapshot_migrates_to_current). 4 versioned migrations; idempotent re-run; partial target.
 
 ## Dependencies
 

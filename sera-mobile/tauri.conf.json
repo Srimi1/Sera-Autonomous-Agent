@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Sera",
+  "version": "0.1.0",
+  "identifier": "com.sera.mobile",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Sera",
+        "width": 420,
+        "height": 880
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "apk", "aab", "ipa"],
+    "android": {
+      "minSdkVersion": 24
+    },
+    "iOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  },
+  "plugins": {
+    "sera-core": {
+      "comment": "Shared core: mobile talks to the same sidecar API as desktop.",
+      "sidecarUrl": "http://127.0.0.1:11111",
+      "transport": "grpc-web",
+      "crdtSync": {
+        "enabled": true,
+        "endpoint": "/v1/sync",
+        "intervalMs": 5000
+      }
+    }
+  }
+}

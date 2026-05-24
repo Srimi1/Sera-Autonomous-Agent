@@ -12,4 +12,4 @@ script:
 expect:
   substring: "alpha"
   tool_calls: [file_read]
-tags: [filesystem]
+tags: [golden, filesystem]

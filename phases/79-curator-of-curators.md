@@ -2,7 +2,7 @@
 
 ## Status
 
-pending.
+done.
 
 ## Outclass claim
 
@@ -10,11 +10,11 @@ pending.
 
 ## Files
 
-`sera/curator/meta.py`.
+`sera/curator/meta.py`, `tests/test_metacurator.py` — 14 tests.
 
 ## Verification
 
-runaway curator throttled within one cycle.
+20 runaway proposals → 10 accepted, 10 dropped, curator throttled (test_runaway_throttled_in_one_cycle). Sliding window expires; partial acceptance; reset.
 
 ## Dependencies
 

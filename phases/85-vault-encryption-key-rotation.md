@@ -2,7 +2,7 @@
 
 ## Status
 
-pending.
+done (shipped 2026-05-24).
 
 ## Files
 
