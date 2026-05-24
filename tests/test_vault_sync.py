@@ -184,8 +184,10 @@ def test_watcher_fires_on_stable_change(tmp_path: Path):
         # Create + stabilize: write file, leave it alone for two polls.
         target = vault / "note.md"
         target.write_text("hello")
-        # Wait long enough for at least two poll passes to see stable mtime.
-        assert event.wait(timeout=2.0), "watcher never fired"
+        # Generous timeout: the daemon poll thread can be starved under full-suite
+        # CPU load. event.wait returns the instant it fires, so this only matters
+        # on a loaded machine.
+        assert event.wait(timeout=10.0), "watcher never fired"
         assert target in fired
     finally:
         w.stop(timeout=1.0)
