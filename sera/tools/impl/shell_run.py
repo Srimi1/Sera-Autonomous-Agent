@@ -21,6 +21,7 @@ from sera.tools.base import Permission, Tool, ToolContext, ToolScope
 from sera.tools.registry import register
 
 DEFAULT_TIMEOUT = 60
+MAX_TIMEOUT = 300
 OUTPUT_LIMIT_BYTES = 1_000_000  # 1 MB tail per stream
 
 # Commands that match SAFE_ALLOWLIST run at EXECUTE.
@@ -56,8 +57,8 @@ _DENY_PATTERNS = [
     r"\bcurl\s[^|;&]*?\|\s*\S*sh\b",
     r"\bwget\s[^|;&]*?\|\s*\S*sh\b",
     r"\beval\s+",
-    r"`[^`]+`",
-    r"\$\([^)]+\)",
+    r"`",
+    r"\$\(",
     r"\brm\s+(-[a-zA-Z]*[rRfF][a-zA-Z]*|--recursive|--force)\b",
     r"\bfind\s+\S+\s+.*-delete\b",
     r"\bsudo\b",
@@ -132,7 +133,7 @@ def _truncate(data: bytes, label: str) -> str:
 
 async def _handler(args: dict[str, Any], ctx: ToolContext) -> str:
     cmd: str = args.get("command", "")
-    timeout = int(args.get("timeout", DEFAULT_TIMEOUT))
+    timeout = min(int(args.get("timeout", DEFAULT_TIMEOUT)), MAX_TIMEOUT)
     if not cmd.strip():
         return "Refused: empty command."
 

@@ -20,6 +20,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import threading
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -28,6 +29,10 @@ from typing import Any, Callable
 from sera.gateway.router import InboundEvent
 
 log = logging.getLogger("sera.gateway.server")
+
+MAX_CONTENT_LENGTH = 1_048_576  # 1 MB — reject anything larger
+
+_PLATFORM_RE = re.compile(r"^[a-z0-9_-]+$")
 
 # parse_<platform>(payload: dict) -> InboundEvent | None
 EventParser = Callable[[str, dict[str, Any]], "InboundEvent | None"]
@@ -97,14 +102,14 @@ class _Handler(BaseHTTPRequestHandler):
             stats = self.server.stats.as_dict()  # type: ignore[attr-defined]
             self._respond(200, stats)
         else:
-            self._respond(404, {"error": "not found", "path": self.path})
+            self._respond(404, {"error": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802
         if not self.path.startswith("/webhook/"):
-            self._respond(404, {"error": "not found", "path": self.path})
+            self._respond(404, {"error": "not found"})
             return
         platform = self.path[len("/webhook/"):].strip("/")
-        if not platform or "/" in platform:
+        if not platform or not _PLATFORM_RE.match(platform):
             self._respond(400, {"error": "platform required in path: /webhook/<platform>"})
             self.server.stats.bad_request += 1  # type: ignore[attr-defined]
             return
@@ -112,6 +117,10 @@ class _Handler(BaseHTTPRequestHandler):
         srv: GatewayServer = self.server  # type: ignore[assignment]
 
         length = int(self.headers.get("Content-Length", "0") or "0")
+        if length > MAX_CONTENT_LENGTH:
+            srv.stats.bad_request += 1
+            self._respond(413, {"error": f"body too large ({length} bytes, max {MAX_CONTENT_LENGTH})"})
+            return
         try:
             raw = self.rfile.read(length) if length else b""
         except Exception as exc:  # noqa: BLE001

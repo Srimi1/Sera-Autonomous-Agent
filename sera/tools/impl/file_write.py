@@ -1,6 +1,7 @@
 """file_write — write text file under workspace root."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,19 @@ async def _handler(args: dict[str, Any], ctx: ToolContext) -> str:
     if workspace not in p.parents and p != workspace:
         return f"Refused: path escapes workspace ({p})"
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content, encoding="utf-8")
+    # Re-check after mkdir in case a symlink was planted
+    final = p.parent.resolve() / p.name
+    if workspace not in final.parents and final != workspace:
+        return f"Refused: resolved path escapes workspace ({final})"
+    if p.exists() and p.is_symlink():
+        real = p.resolve(strict=True)
+        if workspace not in real.parents and real != workspace:
+            return f"Refused: symlink target escapes workspace ({real})"
+    fd = os.open(str(p), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o644)
+    try:
+        os.write(fd, content.encode("utf-8"))
+    finally:
+        os.close(fd)
     return f"Wrote {len(content)} chars to {raw_path}"
 
 

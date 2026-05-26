@@ -116,6 +116,10 @@ class TelegramSender:
     def _url(self, method: str) -> str:
         return f"{self._base}/bot{self._token}/{method}"
 
+    def __repr__(self) -> str:
+        masked = self._token[:4] + "…" + self._token[-4:] if len(self._token) > 8 else "***"
+        return f"TelegramSender(token={masked})"
+
     def _post_real(self, url: str, data: bytes, headers: dict[str, str]) -> tuple[int, dict[str, Any]]:
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
         try:

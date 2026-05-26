@@ -26,11 +26,14 @@ class CliApprovalGate:
     """Synchronous y/N prompt on stdin via thread executor."""
 
     async def request(self, call: ToolCall, reason: str = "") -> bool:
+        args_str = json.dumps(call.arguments, ensure_ascii=False)
+        if len(args_str) > 200:
+            args_str = args_str[:200] + f"… [{len(args_str) - 200} chars hidden — review full args before approving]"
         prompt_lines = [
             "",
             "═══ APPROVAL REQUIRED ═══",
             f"  tool: {call.name}",
-            f"  args: {json.dumps(call.arguments, ensure_ascii=False)[:200]}",
+            f"  args: {args_str}",
         ]
         if reason:
             prompt_lines.append(f"  reason: {reason}")

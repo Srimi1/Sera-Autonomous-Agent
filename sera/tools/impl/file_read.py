@@ -1,6 +1,7 @@
 """file_read — read text file under workspace root."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -16,11 +17,19 @@ async def _handler(args: dict[str, Any], ctx: ToolContext) -> str:
     workspace = Path(ctx.workspace).resolve()
     if workspace not in p.parents and p != workspace:
         return f"Refused: path escapes workspace ({p})"
+    if p.is_symlink():
+        real = p.resolve(strict=True)
+        if workspace not in real.parents and real != workspace:
+            return f"Refused: symlink target escapes workspace ({real})"
     if not p.exists():
         return f"Not found: {raw_path}"
     if not p.is_file():
         return f"Not a file: {raw_path}"
-    data = p.read_bytes()[:MAX_BYTES]
+    fd = os.open(str(p), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        data = os.read(fd, MAX_BYTES)
+    finally:
+        os.close(fd)
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError:
