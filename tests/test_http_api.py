@@ -8,10 +8,9 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-import time
 import urllib.error
 import urllib.request
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 
 import pytest
 
@@ -19,11 +18,10 @@ from sera.rpc.http_api import (
     API_VERSION,
     SeraHTTPAPI,
     SignedBearer,
-    TokenClaims,
     build_openapi_spec,
     make_async_bridge,
 )
-from sera.gateway.router import InboundEvent, Router
+from sera.gateway.router import Router
 from sera.llm.base import StreamChunk
 
 

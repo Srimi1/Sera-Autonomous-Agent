@@ -3,14 +3,13 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 
-from sera.agent.budget import IterationBudget, MaxIterations
+from sera.agent.budget import IterationBudget
 from sera.eval.cases import ScriptStep
 from sera.eval.stub_llm import StubLLM
 from sera.tools.base import ToolContext
 from sera.tools.delegate import delegate_task, make_delegate_tool
-from sera.tools.registry import all_tools, reset as reset_registry
+from sera.tools.registry import reset as reset_registry
 
 
 # ---------------------------------------------------------------------------

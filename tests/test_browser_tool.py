@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 
 from sera.tools.base import ToolContext
 from sera.tools.impl.browser import (
@@ -57,7 +56,7 @@ def _mock_page(*, title="Test Page", text="Hello world", goto_ok=True) -> MagicM
     page.locator = MagicMock(side_effect=lambda s: _make_locator())
     page.get_by_role = MagicMock(side_effect=lambda r, **kw: _make_locator(f"[{r}] {text}"))
     page.get_by_text = MagicMock(side_effect=lambda t, **kw: _make_locator(t))
-    page.get_by_label = MagicMock(side_effect=lambda l, **kw: _make_locator(f"[label={l}]"))
+    page.get_by_label = MagicMock(side_effect=lambda lbl, **kw: _make_locator(f"[label={lbl}]"))
     page.get_by_placeholder = MagicMock(side_effect=lambda p, **kw: _make_locator(f"[ph={p}]"))
     page.get_by_alt_text = MagicMock(side_effect=lambda a, **kw: _make_locator(f"[alt={a}]"))
     page.get_by_title = MagicMock(side_effect=lambda t, **kw: _make_locator(f"[title={t}]"))

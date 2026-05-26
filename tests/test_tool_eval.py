@@ -4,11 +4,9 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import pytest
 
 from sera.eval.tool_eval import (
     EvalReport,
-    PromotionResult,
     ToolEvalCase,
     ToolEvalVerdict,
     is_promoted,
@@ -19,7 +17,7 @@ from sera.eval.tool_eval import (
 )
 from sera.tools.base import Permission, Tool, ToolScope
 from sera.tools.genesis import ToolSpec, genesis
-from sera.tools.registry import all_tools, reset as reset_registry
+from sera.tools.registry import reset as reset_registry
 
 
 def _run(coro):

@@ -254,7 +254,7 @@ def test_extract_and_persist_sees_redacted_content_for_pii_chunks(tmp_path: Path
     """
     import asyncio
 
-    from sera.memory.graph import ExtractedEntity, ExtractedEdge, ExtractedEntity, ExtractionResult
+    from sera.memory.graph import ExtractionResult
     from sera.memory.graph import extract_and_persist
 
     tree = _tree(tmp_path)

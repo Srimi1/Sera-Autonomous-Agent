@@ -642,6 +642,7 @@ class SeraHTTPAPI(ThreadingHTTPServer):
     @property
     def url(self) -> str:
         host, port = self.server_address[0], self.server_address[1]
+        host = host.decode() if isinstance(host, bytes) else str(host)
         return f"http://{host}:{port}"
 
     def start(self) -> None:

@@ -134,8 +134,8 @@ class ComparisonReport:
         if not outs:
             lines.append("_(none — this is unfinished by the egoist's rule)_")
         else:
-            for c in outs:
-                lines.append(f"- **{c.name}** — none of {', '.join(RIVALS)} ship this.")
+            for cap in outs:
+                lines.append(f"- **{cap.name}** — none of {', '.join(RIVALS)} ship this.")
         lines.append("")
         return "\n".join(lines)
 

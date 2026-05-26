@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 
-import pytest
 
 from sera.tools.base import Permission, ToolContext
 from sera.tools.impl.shell_run import (

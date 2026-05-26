@@ -23,7 +23,7 @@ from typing import Awaitable, Callable
 from sera.council.chairman import run_chairman
 from sera.council.confidence import compute_confidence
 from sera.council.rank import RankingResult, parse_ranking
-from sera.council.runner import CouncilAnswer, CouncilRun, run_council
+from sera.council.runner import CouncilRun, run_council
 
 _RANKING_PROMPT = """\
 Question: {question}
@@ -111,8 +111,8 @@ async def council_skill_dispatch(
     valid_labels = tuple(a.label for a in council_run.answers)
     rankings = await _collect_rankings(council_run, config.llm_factory, valid_labels)
 
-    _confidence = compute_confidence(rankings, threshold=config.escalation_threshold)
-    # P-35: confidence recorded; escalation model-swap deferred to P-36.
+    # P-35: confidence computed (validates rankings); escalation model-swap deferred to P-36.
+    compute_confidence(rankings, threshold=config.escalation_threshold)
 
     synthesis_llm = config.llm_factory(config.synthesis_model_id)
     chairman = await run_chairman(

@@ -15,9 +15,8 @@ import asyncio
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 
-import pytest
 
 from sera.gateway.platforms.imessage import (
     CHAT_DB_SCHEMA,
@@ -28,7 +27,6 @@ from sera.gateway.platforms.imessage import (
     iMessagePoller,
     iMessageReader,
     iMessageSender,
-    iMessageSendResult,
     iMessageSessionStore,
 )
 from sera.gateway.router import InboundEvent, OutboundResponse, Router

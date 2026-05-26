@@ -1,7 +1,6 @@
 """P-32: anonymous peer ranking parser — 20-case verification suite."""
 from __future__ import annotations
 
-import pytest
 
 from sera.council.rank import RankingResult, parse_ranking
 

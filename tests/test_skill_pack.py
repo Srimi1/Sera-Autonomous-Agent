@@ -50,7 +50,8 @@ def test_pack_creates_zip_with_skill_and_manifest(tmp_path: Path):
 
 
 def test_pack_manifest_contains_sha256(tmp_path: Path):
-    import json, hashlib
+    import json
+    import hashlib
     _write_skill(tmp_path / "skills", "beta", body="some content")
     out = tmp_path / "beta.skillpack"
     pack_skill(tmp_path / "skills", "beta", out)
@@ -151,7 +152,8 @@ def test_verify_fails_on_post_sign_tamper(tmp_path: Path):
     sign_pack(out, priv)
 
     # Tamper manifest.json after signing.
-    import io, json
+    import io
+    import json
     buf = io.BytesIO()
     with zipfile.ZipFile(out) as zin, zipfile.ZipFile(buf, "w") as zout:
         for item in zin.infolist():

@@ -375,7 +375,7 @@ class IdentityStore:
         links = self.links_for(identity_id)
         if not links:
             return None
-        return min(links, key=lambda l: (self.tier_for(l.platform), -l.last_seen))
+        return min(links, key=lambda lnk: (self.tier_for(lnk.platform), -lnk.last_seen))
 
     def active_identity_count(self) -> int:
         cutoff = self._clock() - self._ttl_s

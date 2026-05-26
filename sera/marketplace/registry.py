@@ -15,7 +15,6 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from sera.config import SERA_HOME
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 
 from sera.context.tokenjuice import (
     DEFAULT_TABLE_ROW_LIMIT,

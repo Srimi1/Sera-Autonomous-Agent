@@ -8,7 +8,6 @@ import asyncio
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -16,7 +15,6 @@ from sera.integrations.discord import DiscordScanner
 from sera.integrations.gmail import GmailScanner
 from sera.integrations.imessage import IMessageScanner, _cocoa_to_unix
 from sera.integrations.scanner_base import (
-    BackfillResult,
     IngestedMessage,
     backfill,
 )

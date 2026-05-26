@@ -7,12 +7,10 @@ import time
 from pathlib import Path
 
 import pytest
-import yaml
 
 from sera.memory.embedder import StubEmbedder
 from sera.memory.tree import MemoryTree
 from sera.memory.vault import (
-    IngestResult,
     VaultSync,
     VaultWatcher,
     render_file,

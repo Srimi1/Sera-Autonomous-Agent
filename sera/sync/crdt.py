@@ -11,16 +11,16 @@ Two primitives:
 A CRDTDocument wraps both for the three Sera namespaces: chunks, entities,
 relations.  merge() is commutative, associative, and idempotent.
 
-Relay stub (P-95): RelayStub serialises/deserialises the document as JSON for
-future cross-device transport.  Swap with a real WebSocket relay when P-95
-lands.
+RelayStub serialises/deserialises the document as JSON — kept for in-process
+round-trip tests. The live cross-device transport ships in sera/sync/relay.py
+(RelayServer + RelayClient over WebSockets); run it with `sera relay`.
 """
 from __future__ import annotations
 
 import json
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -199,7 +199,8 @@ def merge(local: CRDTDocument, remote: CRDTDocument) -> CRDTDocument:
 # ---------------------------------------------------------------------------
 
 class RelayStub:
-    """No-op relay that serialises to JSON bytes.  Swap with WebSocket when P-95 lands."""
+    """In-process relay that serialises to JSON bytes. The live WebSocket
+    transport is sera.sync.relay.RelayServer/RelayClient."""
 
     @staticmethod
     def encode(doc: CRDTDocument) -> bytes:

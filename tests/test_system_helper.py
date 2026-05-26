@@ -1,19 +1,13 @@
 """P-97: kernel-level integration — LaunchAgent / systemd / Task Scheduler."""
 from __future__ import annotations
 
-import platform
 from pathlib import Path
 
-import pytest
 
 from sera.system.helper import (
     HelperStatus,
     _find_sera_bin,
-    _launchagent_dest,
-    _systemd_dest,
     install,
-    status,
-    uninstall,
     _HELPER_DIR,
     _PLIST_NAME,
     _SERVICE_NAME,

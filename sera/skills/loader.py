@@ -4,11 +4,16 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from sera.tools.base import Permission, Tool, ToolContext, ToolScope
+
+if TYPE_CHECKING:
+    # Type-only import: the runtime path keeps `lifecycle` lazily imported inside
+    # methods to avoid a circular import (lifecycle ↔ loader).
+    from sera.skills.lifecycle import SkillLifecycle
 
 SKILL_TOOL_PREFIX = "skill."
 """Namespace marker so skill-derived tools never collide with system tools."""
@@ -28,6 +33,7 @@ class Skill:
     version: str
     body: str
     path: Path
+    description: str = ""
     args_schema: dict[str, Any] | None = None
     lineage: tuple[str, ...] = ()
     council: bool = False
@@ -74,6 +80,7 @@ def load_skill(path: Path) -> Skill:
         version=meta["version"],
         body=body,
         path=Path(path),
+        description=str(meta.get("description") or ""),
         args_schema=raw_schema,
         lineage=lineage,
         council=bool(meta.get("council", False)),
@@ -96,7 +103,7 @@ def skill_to_tool(skill: Skill) -> Tool:
 
     return Tool(
         name=f"{SKILL_TOOL_PREFIX}{skill.name}",
-        description=skill.body.split("\n\n", 1)[0],
+        description=skill.description or skill.body.split("\n\n", 1)[0],
         parameters=parameters,
         permission=permission,
         scope=ToolScope.SKILL,
@@ -135,9 +142,9 @@ class SkillRegistry:
     the lifecycle row so freshness-aware sweeps see the access.
     """
 
-    def __init__(self, root: Path, *, lifecycle: object | None = None) -> None:
+    def __init__(self, root: Path, *, lifecycle: "SkillLifecycle | None" = None) -> None:
         self.root = Path(root)
-        self.lifecycle = lifecycle  # SkillLifecycle | None (avoid hard import here)
+        self.lifecycle = lifecycle  # lazy runtime import avoids the circular dep
         # name → (tool_name, manifest_mtime)
         self._tracked: dict[str, tuple[str, float]] = {}
 
@@ -250,7 +257,11 @@ class RefreshSummary:
 _DEFAULT_REGISTRIES: dict[str, SkillRegistry] = {}
 
 
-def get_default_registry(root: Path) -> SkillRegistry:
+def get_default_registry(
+    root: Path,
+    *,
+    lifecycle: "SkillLifecycle | None" = None,
+) -> SkillRegistry:
     """Process-wide singleton SkillRegistry keyed by root path.
 
     Lets multiple CLI invocations (or repeated agent turns) reuse one
@@ -261,8 +272,10 @@ def get_default_registry(root: Path) -> SkillRegistry:
     key = str(Path(root).resolve())
     reg = _DEFAULT_REGISTRIES.get(key)
     if reg is None:
-        reg = SkillRegistry(root=Path(root))
+        reg = SkillRegistry(root=Path(root), lifecycle=lifecycle)
         _DEFAULT_REGISTRIES[key] = reg
+    elif lifecycle is not None and reg.lifecycle is None:
+        reg.lifecycle = lifecycle
     return reg
 
 

@@ -1,9 +1,7 @@
 """P-91: CRDT memory sync — LWWRegister, ORSet, CRDTDocument, RelayStub."""
 from __future__ import annotations
 
-import time
 
-import pytest
 
 from sera.sync.crdt import (
     CRDTDocument,

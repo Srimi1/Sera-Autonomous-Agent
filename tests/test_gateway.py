@@ -7,16 +7,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 import urllib.error
 import urllib.request
 from typing import Any, AsyncIterator
 from pathlib import Path
 
-import pytest
 
-from sera.gateway.router import InboundEvent, OutboundResponse, Router
-from sera.gateway.server import GatewayServer, ServerStats, build_server, default_parser
+from sera.gateway.router import InboundEvent, Router
+from sera.gateway.server import build_server, default_parser
 from sera.llm.bandit import ThompsonBandit
 from sera.llm.base import StreamChunk
 from sera.llm.budget import BudgetConfig, BudgetEnforcer
@@ -194,6 +192,83 @@ class TestCostEnforcement:
         resp = _run(router.dispatch(_event()))
         assert resp.ok
         assert not resp.blocked_by_budget
+
+
+# ---------------------------------------------------------------------------
+# Cost plumbing: run_turn stamps actual cost → router feeds bandit reward gate
+# ---------------------------------------------------------------------------
+
+class _CostedLLM:
+    """Stub that reports token usage under a priced model so _turn_cost > 0."""
+    name = "openai"
+    context_budget = 32_000
+
+    def __init__(self, *, model: str = "claude-opus-4-7", in_tok: int = 100_000, out_tok: int = 100_000) -> None:
+        self.model = model
+        self._in = in_tok
+        self._out = out_tok
+        self.calls = 0
+
+    async def stream(self, messages, tools=None, system=None):
+        self.calls += 1
+        yield StreamChunk(delta_text="done")
+        yield StreamChunk(
+            finish_reason="stop",
+            usage={"input_tokens": self._in, "output_tokens": self._out},
+        )
+
+
+class TestCostPlumbing:
+    def test_run_turn_stamps_actual_cost_on_session(self, tmp_path) -> None:
+        """The session the router dispatched into carries the real turn cost."""
+        from sera.memory.session import Session
+
+        session = Session.create(workspace=str(tmp_path), db_path=tmp_path / "s.db")
+        router = Router(
+            llm_factory=lambda _p: _CostedLLM(),
+            session_resolver=lambda _e: session,
+        )
+        resp = _run(router.dispatch(_event("hi")))
+        assert resp.ok
+        # opus pricing on 100k+100k tokens is non-trivial; plumbing proven if > 0.
+        assert session.last_turn_cost_usd > 0.0
+
+    def test_cost_over_budget_zeroes_reward(self, tmp_path) -> None:
+        """A turn whose real cost exceeds cost_budget_usd earns reward 0 (beta moves)."""
+        import random
+        from sera.memory.session import Session
+
+        session = Session.create(workspace=str(tmp_path), db_path=tmp_path / "s.db")
+        bandit = ThompsonBandit(rng=random.Random(0))
+        router = Router(
+            llm_factory=lambda _p: _CostedLLM(),  # ~$9 turn at opus pricing
+            profiles=["cheap", "big"],
+            bandit=bandit,
+            session_resolver=lambda _e: session,
+            cost_budget_usd=0.0001,                # far below the turn's real cost
+        )
+        _run(router.dispatch(_event("hi")))
+        # Reward gate failed on cost → the picked arm's beta incremented, alpha did not.
+        arm = next(iter(bandit.state().values()))
+        assert arm["beta"] > arm["alpha"], f"cost gate did not zero reward: {arm}"
+
+    def test_cheap_turn_under_budget_earns_reward(self, tmp_path) -> None:
+        """The same turn under a generous cost budget earns reward 1 (alpha moves)."""
+        import random
+        from sera.memory.session import Session
+
+        session = Session.create(workspace=str(tmp_path), db_path=tmp_path / "s.db")
+        bandit = ThompsonBandit(rng=random.Random(0))
+        router = Router(
+            llm_factory=lambda _p: _CostedLLM(),
+            profiles=["cheap", "big"],
+            bandit=bandit,
+            session_resolver=lambda _e: session,
+            cost_budget_usd=1000.0,                # generous — cost gate passes
+        )
+        _run(router.dispatch(_event("hi")))
+        arm = next(iter(bandit.state().values()))
+        assert arm["alpha"] > arm["beta"], f"reward not granted under budget: {arm}"
 
 
 # ---------------------------------------------------------------------------

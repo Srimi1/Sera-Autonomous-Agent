@@ -41,7 +41,7 @@ def _ranking(order: tuple[str, ...]) -> RankingResult:
     """Helper: always produces a complete RankingResult."""
     return RankingResult(
         ranking=order,
-        raw_section="FINAL RANKING:\n" + "\n".join(f"{i+1}. {l}" for i, l in enumerate(order)),
+        raw_section="FINAL RANKING:\n" + "\n".join(f"{i+1}. {lbl}" for i, lbl in enumerate(order)),
         is_complete=True,
         missing=frozenset(),
         parse_method="numbered_bare",

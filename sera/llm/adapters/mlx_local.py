@@ -136,7 +136,7 @@ class MLXLocalAdapter:
         # Some versions wrap output in =====\n ... \n=====
         if text.startswith("="):
             lines = text.splitlines()
-            inner = [l for l in lines if not l.startswith("===")]
+            inner = [line for line in lines if not line.startswith("===")]
             text = "\n".join(inner).strip()
         return text
 

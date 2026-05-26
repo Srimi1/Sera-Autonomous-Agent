@@ -44,7 +44,12 @@ class LLM(Protocol):
     name: str
     context_budget: int
 
-    async def stream(
+    # Declared as a plain (non-async) method returning AsyncIterator: the
+    # adapters implement `stream` as async generators (`async def` + `yield`),
+    # whose call-type is AsyncIterator[StreamChunk] directly — NOT a coroutine.
+    # Marking this `async def` would make mypy infer Coroutine[..., AsyncIterator]
+    # and reject both `async for chunk in llm.stream(...)` and adapter conformance.
+    def stream(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,

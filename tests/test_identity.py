@@ -20,7 +20,6 @@ import pytest
 from sera.gateway.identity import (
     DEFAULT_SESSION_TTL_S,
     PLATFORM_PRIVACY,
-    ChannelLink,
     IdentityStore,
     PrivacyTier,
 )
@@ -104,7 +103,7 @@ class TestIdentityManagement:
         iid = store.create_identity()
         store.link_all(iid, [("telegram", "42"), ("slack", "U1")])
         links = store.links_for(iid)
-        assert {(l.platform, l.channel_user_id) for l in links} == {("telegram", "42"), ("slack", "U1")}
+        assert {(lk.platform, lk.channel_user_id) for lk in links} == {("telegram", "42"), ("slack", "U1")}
 
     def test_get_identity_includes_links(self, tmp_path: Path) -> None:
         store = _store(tmp_path)
@@ -186,8 +185,10 @@ class TestSessionUnification:
 
     def test_active_identity_count(self, tmp_path: Path) -> None:
         store = _store(tmp_path, clock=lambda: 100.0)
-        a = store.create_identity(); store.link(a, "telegram", "1")
-        b = store.create_identity(); store.link(b, "slack", "2")
+        a = store.create_identity()
+        store.link(a, "telegram", "1")
+        b = store.create_identity()
+        store.link(b, "slack", "2")
         store.get_or_create_session("telegram", "1", workspace=str(tmp_path))
         store.get_or_create_session("slack", "2", workspace=str(tmp_path))
         assert store.active_identity_count() == 2
@@ -213,8 +214,10 @@ class TestMerge:
         """Two people-then-discovered-as-one: merge keeps the freshest session."""
         t = [100.0]
         store = _store(tmp_path, clock=lambda: t[0])
-        a = store.create_identity(); store.link(a, "telegram", "42")
-        b = store.create_identity(); store.link(b, "slack", "U1")
+        a = store.create_identity()
+        store.link(a, "telegram", "42")
+        b = store.create_identity()
+        store.link(b, "slack", "U1")
         store.get_or_create_session("telegram", "42", workspace=str(tmp_path))
         t[0] = 200.0
         s_b = store.get_or_create_session("slack", "U1", workspace=str(tmp_path))   # newer

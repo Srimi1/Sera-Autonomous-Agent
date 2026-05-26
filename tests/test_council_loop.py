@@ -11,16 +11,13 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import pytest
 
 from sera.agent.loop import _council_question, run_turn
 from sera.eval.cases import ScriptStep
 from sera.eval.stub_llm import StubLLM
 from sera.memory.session import Session
 from sera.skills.manifest import CouncilConfig, council_skill_dispatch
-from sera.tools.base import Permission, Tool, ToolContext, ToolScope
 from sera.tools.base import ToolCall
-from sera.council.rank import RankingResult
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────

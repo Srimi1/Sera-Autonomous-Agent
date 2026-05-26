@@ -115,11 +115,11 @@ def detect(text: str) -> list[PIIMatch]:
     raw.sort(key=lambda m: (m.start, -(m.end - m.start)))
     out: list[PIIMatch] = []
     last_end = -1
-    for m in raw:
-        if m.start < last_end:
+    for pm in raw:
+        if pm.start < last_end:
             continue  # overlap with prior, longer match
-        out.append(m)
-        last_end = m.end
+        out.append(pm)
+        last_end = pm.end
     return out
 
 

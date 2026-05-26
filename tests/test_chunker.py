@@ -5,8 +5,6 @@ import pytest
 
 from sera.context.tokens import estimate
 from sera.memory.chunker import (
-    DEFAULT_MAX_TOKENS,
-    Chunk,
     chunk_markdown,
     chunk_text,
 )

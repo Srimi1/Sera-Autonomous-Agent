@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
 from sera.safety.declassify import Declassifier, DeclassifyResult, _redact_object
 

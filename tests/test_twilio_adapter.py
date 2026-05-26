@@ -9,7 +9,6 @@ import asyncio
 import base64
 import hashlib
 import hmac
-import json
 import time
 import urllib.parse
 from pathlib import Path
@@ -19,7 +18,6 @@ import pytest
 
 from sera.gateway.platforms.twilio import (
     DEFAULT_SESSION_TTL_S,
-    TwilioSendResult,
     TwilioSender,
     TwilioSessionStore,
     parse_twilio,

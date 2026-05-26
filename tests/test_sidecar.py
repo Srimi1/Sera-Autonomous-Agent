@@ -10,7 +10,7 @@ import os
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 
 import pytest
 

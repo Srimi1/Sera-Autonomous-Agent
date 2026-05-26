@@ -9,7 +9,6 @@ import pytest
 
 from sera.memory.graph import (
     EDGE_KINDS,
-    CausalLink,
     ExtractedEdge,
     ExtractedEntity,
     ExtractionResult,
@@ -131,8 +130,8 @@ def test_extract_and_persist_missing_chunk(tmp_path: Path):
 
 def test_backfill_processes_only_pending(tmp_path: Path):
     tree = _tree(tmp_path)
-    a = tree.add_chunk(source="s", content="Alpha caused Beta.")
-    b = tree.add_chunk(source="s", content="Carol works at Acme.")
+    tree.add_chunk(source="s", content="Alpha caused Beta.")
+    tree.add_chunk(source="s", content="Carol works at Acme.")
     stats = _run(backfill(tree, StubExtractor()))
     assert stats.chunks_processed == 2
     assert stats.edges_written >= 2
@@ -140,7 +139,7 @@ def test_backfill_processes_only_pending(tmp_path: Path):
     stats2 = _run(backfill(tree, StubExtractor()))
     assert stats2.chunks_processed == 0
     # Unrelated chunks added later still pick up on next run.
-    c = tree.add_chunk(source="s", content="X supersedes Y.")
+    tree.add_chunk(source="s", content="X supersedes Y.")
     stats3 = _run(backfill(tree, StubExtractor()))
     assert stats3.chunks_processed == 1
 
@@ -176,7 +175,7 @@ def test_causal_chain_upstream_traverses_to_root(tmp_path: Path):
     tree = _tree(tmp_path)
     _seed_caused_chain(tree)
     links = causal_chain(tree, "D", depth=5, direction="upstream")
-    flat = [(l.src, l.dst) for l in links]
+    flat = [(lk.src, lk.dst) for lk in links]
     assert ("C", "D") in flat
     assert ("B", "C") in flat
     assert ("A", "B") in flat
@@ -186,7 +185,7 @@ def test_causal_chain_downstream_walks_forward(tmp_path: Path):
     tree = _tree(tmp_path)
     _seed_caused_chain(tree)
     links = causal_chain(tree, "A", depth=5, direction="downstream")
-    flat = [(l.src, l.dst) for l in links]
+    flat = [(lk.src, lk.dst) for lk in links]
     assert ("A", "B") in flat
     assert ("B", "C") in flat
     assert ("C", "D") in flat
@@ -196,7 +195,7 @@ def test_causal_chain_respects_depth(tmp_path: Path):
     tree = _tree(tmp_path)
     _seed_caused_chain(tree)
     links = causal_chain(tree, "D", depth=1, direction="upstream")
-    pairs = {(l.src, l.dst) for l in links}
+    pairs = {(lk.src, lk.dst) for lk in links}
     assert ("C", "D") in pairs
     assert ("B", "C") not in pairs
 
@@ -225,7 +224,7 @@ def test_causal_chain_handles_cycles(tmp_path: Path):
         tree.add_relation(src=src, dst=dst, kind="caused")
     links = causal_chain(tree, "A", depth=10, direction="downstream")
     # Cycle-safe: every node visited at most once for expansion.
-    pairs = {(l.src, l.dst) for l in links}
+    pairs = {(lk.src, lk.dst) for lk in links}
     assert ("A", "B") in pairs
     assert ("B", "A") in pairs
 

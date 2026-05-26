@@ -12,7 +12,6 @@ Outclass over llm-council:
 """
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
@@ -77,7 +76,7 @@ async def run_chairman(
     winner_model = label_to_model.get(winner_label)
 
     answer_by_label = {a.label: a.content for a in council_run.answers}
-    sorted_labels = sorted(borda_scores, key=lambda l: (-borda_scores[l], l))
+    sorted_labels = sorted(borda_scores, key=lambda lbl: (-borda_scores[lbl], lbl))
     ranked_answers = "\n\n".join(
         f"[{rank + 1}] {answer_by_label.get(label, '(no answer)')}"
         for rank, label in enumerate(sorted_labels)

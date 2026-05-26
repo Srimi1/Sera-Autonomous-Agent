@@ -4,9 +4,8 @@ from __future__ import annotations
 import socket
 from pathlib import Path
 
-import pytest
 
-from sera.telemetry.local import LocalTelemetry, TelemetryEvent, EventSummary
+from sera.telemetry.local import LocalTelemetry
 
 
 def _tel(tmp_path: Path) -> LocalTelemetry:
@@ -111,7 +110,7 @@ class TestZeroNetworkCalls:
 
     def test_no_network_imports(self) -> None:
         """telemetry/local.py must not import any network library."""
-        import importlib, inspect
+        import inspect
         import sera.telemetry.local as mod
         src = inspect.getsource(mod)
         bad_imports = ["import requests", "import httpx", "import urllib.request",

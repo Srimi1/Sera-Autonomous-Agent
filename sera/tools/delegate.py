@@ -23,7 +23,6 @@ from sera.agent.loop import SYSTEM_PROMPT, TokenSink, run_turn
 from sera.llm.base import LLM
 from sera.memory.session import Session
 from sera.tools.base import Permission, Tool, ToolContext, ToolScope
-from sera.tools.registry import register
 
 
 # ---------------------------------------------------------------------------

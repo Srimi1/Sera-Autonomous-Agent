@@ -14,7 +14,6 @@ from sera.train.lora import (
     GainTracker,
     LoRATrainer,
     TrainConfig,
-    TrainResult,
     _parse_final_loss,
 )
 
@@ -235,14 +234,18 @@ class TestGainTracker:
 
     def test_gain_pp_positive_is_improvement(self, tmp_path: Path) -> None:
         tracker = _tracker(tmp_path)
-        tracker._t[0] = 0.0; tracker.record("d1", 0.70)
-        tracker._t[0] = 1.0; tracker.record("d2", 0.73)
+        tracker._t[0] = 0.0
+        tracker.record("d1", 0.70)
+        tracker._t[0] = 1.0
+        tracker.record("d2", 0.73)
         assert tracker.gain_pp() > 0
 
     def test_gain_pp_negative_is_regression(self, tmp_path: Path) -> None:
         tracker = _tracker(tmp_path)
-        tracker._t[0] = 0.0; tracker.record("d1", 0.80)
-        tracker._t[0] = 1.0; tracker.record("d2", 0.75)
+        tracker._t[0] = 0.0
+        tracker.record("d1", 0.80)
+        tracker._t[0] = 1.0
+        tracker.record("d2", 0.75)
         assert tracker.gain_pp() < 0
 
     def test_gain_pp_none_with_one_entry(self, tmp_path: Path) -> None:

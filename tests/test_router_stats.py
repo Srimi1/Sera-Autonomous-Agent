@@ -1,7 +1,6 @@
 """Tests for sera.llm.router_stats — record, count, p50 aggregation."""
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest

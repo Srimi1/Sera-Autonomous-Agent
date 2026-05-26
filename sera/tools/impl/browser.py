@@ -9,7 +9,6 @@ Run `pip install playwright && playwright install chromium` to enable.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -19,7 +18,7 @@ from sera.tools.registry import register
 log = logging.getLogger("sera.tools.browser")
 
 try:
-    from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+    from playwright.async_api import async_playwright
     _PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     _PLAYWRIGHT_AVAILABLE = False

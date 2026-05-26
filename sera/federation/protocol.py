@@ -60,6 +60,8 @@ def _sign(data: bytes, private_key_pem: bytes) -> bytes:
     if not _CRYPTO:
         raise ImportError("pip install cryptography to sign federation messages")
     priv = load_pem_private_key(private_key_pem, password=None)
+    if not isinstance(priv, Ed25519PrivateKey):
+        raise FederationError("federation requires an Ed25519 private key")
     return priv.sign(data)
 
 
@@ -68,6 +70,8 @@ def _verify(data: bytes, sig: bytes, public_key_pem: bytes) -> None:
         raise ImportError("pip install cryptography to verify federation messages")
     try:
         pub = load_pem_public_key(public_key_pem)
+        if not isinstance(pub, Ed25519PublicKey):
+            raise FederationError("federation requires an Ed25519 public key")
         pub.verify(sig, data)
     except InvalidSignature as e:
         raise FederationError("signature verification failed") from e

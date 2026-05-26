@@ -21,6 +21,7 @@ from pathlib import Path
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
         Ed25519PrivateKey,
+        Ed25519PublicKey,
     )
     from cryptography.hazmat.primitives.serialization import (
         Encoding,
@@ -150,6 +151,8 @@ def verify_pack(pack_path: Path, public_key_pem: bytes) -> None:
         sig = base64.b64decode(zf.read(_SIG_FILE))
 
     pub = load_pem_public_key(public_key_pem)
+    if not isinstance(pub, Ed25519PublicKey):
+        raise PackError("pack signatures require an Ed25519 public key")
     try:
         pub.verify(sig, manifest_bytes)
     except InvalidSignature as e:
@@ -234,4 +237,6 @@ def _sign_bytes(data: bytes, private_key_pem: bytes) -> bytes:
     if not _CRYPTO:
         raise PackError("pip install cryptography to sign packs")
     priv = load_pem_private_key(private_key_pem, password=None)
+    if not isinstance(priv, Ed25519PrivateKey):
+        raise PackError("pack signing requires an Ed25519 private key")
     return priv.sign(data)

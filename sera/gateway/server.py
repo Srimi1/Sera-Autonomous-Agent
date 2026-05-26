@@ -20,7 +20,6 @@ import asyncio
 import contextlib
 import json
 import logging
-import socket
 import threading
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,6 +31,11 @@ log = logging.getLogger("sera.gateway.server")
 
 # parse_<platform>(payload: dict) -> InboundEvent | None
 EventParser = Callable[[str, dict[str, Any]], "InboundEvent | None"]
+
+# (headers, raw_body) -> bool. Per-platform request authenticator run BEFORE
+# JSON parsing. Discord's Ed25519 verifier is the canonical user (P-53.5):
+# a real Discord app 401s at registration without it.
+SignatureVerifier = Callable[[Any, bytes], bool]
 
 
 def default_parser(platform: str, payload: dict[str, Any]) -> InboundEvent | None:
@@ -63,9 +67,15 @@ class ServerStats:
     accepted: int = 0
     rejected: int = 0
     bad_request: int = 0
+    unauthorized: int = 0
 
     def as_dict(self) -> dict[str, int]:
-        return {"accepted": self.accepted, "rejected": self.rejected, "bad_request": self.bad_request}
+        return {
+            "accepted": self.accepted,
+            "rejected": self.rejected,
+            "bad_request": self.bad_request,
+            "unauthorized": self.unauthorized,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -99,18 +109,34 @@ class _Handler(BaseHTTPRequestHandler):
             self.server.stats.bad_request += 1  # type: ignore[attr-defined]
             return
 
+        srv: GatewayServer = self.server  # type: ignore[assignment]
+
         length = int(self.headers.get("Content-Length", "0") or "0")
         try:
             raw = self.rfile.read(length) if length else b""
+        except Exception as exc:  # noqa: BLE001
+            srv.stats.bad_request += 1
+            self._respond(400, {"error": f"bad body: {exc}"})
+            return
+
+        # Per-platform signature verification runs on the RAW body before JSON
+        # parsing — Discord signs (timestamp + raw_bytes), so any re-encoding
+        # would invalidate the check.
+        verifier = srv.verifiers.get(platform)
+        if verifier is not None and not verifier(self.headers, raw):
+            srv.stats.unauthorized += 1
+            self._respond(401, {"error": "invalid request signature"})
+            return
+
+        try:
             payload = json.loads(raw.decode("utf-8")) if raw else {}
             if not isinstance(payload, dict):
                 raise ValueError("body must be a JSON object")
         except Exception as exc:  # noqa: BLE001
-            self.server.stats.bad_request += 1  # type: ignore[attr-defined]
+            srv.stats.bad_request += 1
             self._respond(400, {"error": f"bad body: {exc}"})
             return
 
-        srv: GatewayServer = self.server  # type: ignore[assignment]
         parser = srv.parser
         event = parser(platform, payload)
         if event is None:
@@ -159,17 +185,20 @@ class GatewayServer(ThreadingHTTPServer):
         loop: asyncio.AbstractEventLoop,
         queue: asyncio.Queue,
         parser: EventParser = default_parser,
+        verifiers: dict[str, SignatureVerifier] | None = None,
     ) -> None:
         super().__init__((host, port), _Handler)
         self.loop = loop
         self.queue = queue
         self.parser = parser
+        self.verifiers: dict[str, SignatureVerifier] = verifiers or {}
         self.stats = ServerStats()
         self._thread: threading.Thread | None = None
 
     @property
     def url(self) -> str:
         host, port = self.server_address[0], self.server_address[1]
+        host = host.decode() if isinstance(host, bytes) else str(host)
         return f"http://{host}:{port}"
 
     def start(self) -> None:
@@ -199,12 +228,19 @@ def build_server(
     port: int = 0,
     parser: EventParser = default_parser,
     queue: asyncio.Queue | None = None,
+    verifiers: dict[str, SignatureVerifier] | None = None,
 ) -> tuple[GatewayServer, asyncio.Queue]:
     """Build a GatewayServer bound to the current event loop.
 
     Returns (server, queue). Caller is responsible for `server.start()` and
     consuming `queue` (typically via Router.serve(queue)).
+
+    verifiers: optional per-platform request authenticators (e.g.
+    {"discord": DiscordSignatureVerifier(pubkey)}) run on the raw body before
+    JSON parsing; a failed check returns 401.
     """
     loop = asyncio.get_event_loop()
     q = queue if queue is not None else asyncio.Queue()
-    return GatewayServer(host=host, port=port, loop=loop, queue=q, parser=parser), q
+    return GatewayServer(
+        host=host, port=port, loop=loop, queue=q, parser=parser, verifiers=verifiers,
+    ), q

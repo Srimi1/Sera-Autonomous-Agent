@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 import yaml
 
 WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "eval.yml"

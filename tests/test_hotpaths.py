@@ -1,11 +1,9 @@
 """P-98: Rust hot-paths via PyO3 — shim + pure-Python fallback."""
 from __future__ import annotations
 
-import math
 import time
 from pathlib import Path
 
-import pytest
 
 from sera.hotpaths import (
     chunk_text,

@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from sera.voice.stt import LocalSTT, STTError, STTUnavailable, Transcript
-from sera.voice.tts import LocalTTS, Speech, TTSError, TTSUnavailable
+from sera.voice.stt import LocalSTT, STTError, STTUnavailable
+from sera.voice.tts import LocalTTS, TTSError, TTSUnavailable
 
 
 # ---------------------------------------------------------------------------

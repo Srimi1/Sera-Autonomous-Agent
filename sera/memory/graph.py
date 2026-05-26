@@ -210,30 +210,30 @@ def parse_llm_extraction(raw: object) -> ExtractionResult:
     raw_edges: Iterable[dict] = data.get("edges") or ()
 
     entities: list[ExtractedEntity] = []
-    for e in raw_entities:
-        if not isinstance(e, dict):
+    for ent in raw_entities:
+        if not isinstance(ent, dict):
             continue
-        name = (e.get("name") or "").strip()
+        name = (ent.get("name") or "").strip()
         if not name:
             continue
         entities.append(
-            ExtractedEntity(name=_normalize_name(name), type=e.get("type") or "concept")
+            ExtractedEntity(name=_normalize_name(name), type=ent.get("type") or "concept")
         )
 
     edges: list[ExtractedEdge] = []
-    for e in raw_edges:
-        if not isinstance(e, dict):
+    for edge in raw_edges:
+        if not isinstance(edge, dict):
             continue
-        kind = e.get("kind")
+        kind = edge.get("kind")
         if kind not in EDGE_KINDS:
             logger.info("dropping edge with unknown kind %r", kind)
             continue
-        src = (e.get("src") or "").strip()
-        dst = (e.get("dst") or "").strip()
+        src = (edge.get("src") or "").strip()
+        dst = (edge.get("dst") or "").strip()
         if not src or not dst:
             continue
         try:
-            confidence = float(e.get("confidence", 1.0))
+            confidence = float(edge.get("confidence", 1.0))
         except (TypeError, ValueError):
             confidence = 1.0
         confidence = max(0.0, min(1.0, confidence))

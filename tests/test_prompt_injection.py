@@ -5,12 +5,11 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-import pytest
 
 from sera.agent.loop import _sanitize_tool_args, _sanitize_tool_output, run_turn
 from sera.context.compressor import FENCE
 from sera.llm.base import StreamChunk
-from sera.memory.session import Message, Session
+from sera.memory.session import Session
 from sera.safety.approval import AutoApproveGate
 from sera.tools.base import Permission, Tool, ToolContext, ToolScope
 from sera.tools.registry import register

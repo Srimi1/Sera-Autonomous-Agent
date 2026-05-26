@@ -5,7 +5,6 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
-import pytest
 
 from sera.curator.discovery import (
     MIN_PATTERN_FREQUENCY,

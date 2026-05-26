@@ -12,7 +12,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
+from typing import Any
 
 from sera.tools.base import Permission, Tool, ToolContext, ToolScope
 from sera.tools.registry import register, unregister
@@ -307,7 +307,6 @@ class MCPClient:
 
         messages = params.get("messages", [])
         system = params.get("systemPrompt")
-        max_tokens = params.get("maxTokens", 1024)
 
         # Convert MCP sampling messages to OpenAI format
         openai_msgs = [

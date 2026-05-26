@@ -4,9 +4,8 @@ Phase verification: ≥95% recall on 200-sample set; <2% FP.
 """
 from __future__ import annotations
 
-import pytest
 
-from sera.safety.injection import InjectionClassifier, InjectionScore, _heuristic_classify
+from sera.safety.injection import InjectionClassifier, _heuristic_classify
 
 
 # ---------------------------------------------------------------------------

@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import pytest
 
-from sera.redteam.blue import BlueAgent, ClassifyResult, Finding, _keyword_classifier
-from sera.redteam.red import PlantedPayload, RedAgent, RedRun
+from sera.redteam.blue import BlueAgent, ClassifyResult, _keyword_classifier
+from sera.redteam.red import RedAgent
 
 
 # ---------------------------------------------------------------------------

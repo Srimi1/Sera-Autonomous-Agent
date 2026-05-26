@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-import pytest
 
 from sera.agent.loop import _build_view, run_turn
 from sera.context.compressor import FENCE, compact_session

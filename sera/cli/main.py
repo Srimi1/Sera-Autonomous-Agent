@@ -18,7 +18,14 @@ from sera import __version__
 from sera.agent.budget import IterationBudget
 from sera.agent.interrupt import InterruptToken, Interrupted, install_sigint
 from sera.agent.loop import TokenSink, run_turn
-from sera.config import CONFIG_PATH, SESSIONS_DB, SKILLS_DIR, load, save
+from sera.config import (
+    CONFIG_PATH,
+    SESSIONS_DB,
+    SKILLS_DIR,
+    load,
+    save,
+    workspace_skills_dir,
+)
 from sera.llm import router_stats as _router_stats
 from sera.llm.router import for_profile
 from sera.llm.secrets import get_key, set_key
@@ -29,6 +36,15 @@ from sera.tools.base import Permission
 from sera.tools.registry import all_tools
 
 console = Console()
+
+
+def _resolve_skill_root(root: Path | None) -> Path:
+    if root is not None:
+        return root.resolve()
+    workspace_root = workspace_skills_dir(Path.cwd())
+    if workspace_root.exists():
+        return workspace_root
+    return SKILLS_DIR.resolve()
 
 
 @click.group()
@@ -163,9 +179,159 @@ def list_sessions_cmd(limit: int) -> None:
     console.print(table)
 
 
+@main.group(name="profile")
+def profile_group() -> None:
+    """Workspace PROFILE.md defaults."""
+
+
+@profile_group.command(name="init")
+@click.option("--workspace", default=None, help="Workspace root. Defaults to cwd.")
+@click.option("--force", is_flag=True, default=False,
+              help="Rewrite managed blocks even when PROFILE.md already exists.")
+def profile_init_cmd(workspace: str | None, force: bool) -> None:
+    from sera.profile import init_profile
+
+    ws = workspace or os.getcwd()
+    path = init_profile(ws, force=force)
+    console.print(f"[green]profile ready[/green] {path}")
+
+
+@profile_group.command(name="show")
+@click.option("--workspace", default=None, help="Workspace root. Defaults to cwd.")
+def profile_show_cmd(workspace: str | None) -> None:
+    from sera.profile import load_profile_text, profile_path
+
+    ws = workspace or os.getcwd()
+    text = load_profile_text(ws)
+    if not text:
+        console.print(f"[dim]No PROFILE.md at {profile_path(ws)}.[/dim]")
+        return
+    console.print(text)
+
+
+@profile_group.command(name="suggest")
+@click.option("--workspace", default=None, help="Workspace root. Defaults to cwd.")
+@click.option("--db", "db_path", default=None, type=click.Path(path_type=Path),
+              help="Profile suggestions DB path.")
+@click.option("--section", "section_key", required=True, help="Managed section key.")
+@click.option("--item", required=True, help="Profile bullet to suggest.")
+@click.option("--reason", required=True, help="Why this belongs in PROFILE.md.")
+def profile_suggest_cmd(
+    workspace: str | None,
+    db_path: Path | None,
+    section_key: str,
+    item: str,
+    reason: str,
+) -> None:
+    from sera.profile_learning import ProfileLearner
+
+    ws = workspace or os.getcwd()
+    learner = ProfileLearner(workspace=ws, db_path=db_path)
+    suggestion = learner.suggest(
+        section_key=section_key,
+        item=item,
+        reason=reason,
+    )
+    console.print(
+        f"[green]profile suggestion {suggestion.id}[/green] "
+        f"{suggestion.section_key}: {suggestion.item}"
+    )
+
+
+@profile_group.command(name="pending")
+@click.option("--workspace", default=None, help="Workspace root. Defaults to cwd.")
+@click.option("--db", "db_path", default=None, type=click.Path(path_type=Path),
+              help="Profile suggestions DB path.")
+def profile_pending_cmd(workspace: str | None, db_path: Path | None) -> None:
+    from sera.profile_learning import ProfileLearner
+
+    ws = workspace or os.getcwd()
+    learner = ProfileLearner(workspace=ws, db_path=db_path)
+    suggestions = learner.pending()
+    if not suggestions:
+        console.print("[dim]No pending profile suggestions.[/dim]")
+        return
+    table = Table(title=f"Profile suggestions — {Path(ws).name}")
+    table.add_column("id", style="bold")
+    table.add_column("section")
+    table.add_column("item", overflow="fold")
+    table.add_column("reason", overflow="fold")
+    for s in suggestions:
+        table.add_row(str(s.id), s.section_key, s.item, s.reason)
+    console.print(table)
+
+
+@profile_group.command(name="apply")
+@click.argument("suggestion_id", type=int)
+@click.option("--workspace", default=None, help="Workspace root. Defaults to cwd.")
+@click.option("--db", "db_path", default=None, type=click.Path(path_type=Path),
+              help="Profile suggestions DB path.")
+def profile_apply_cmd(
+    suggestion_id: int,
+    workspace: str | None,
+    db_path: Path | None,
+) -> None:
+    from sera.profile_learning import ProfileLearner
+
+    ws = workspace or os.getcwd()
+    learner = ProfileLearner(workspace=ws, db_path=db_path)
+    suggestion = learner.apply(suggestion_id)
+    console.print(
+        f"[green]applied[/green] {suggestion.section_key}: {suggestion.item}"
+    )
+
+
+@profile_group.command(name="reject")
+@click.argument("suggestion_id", type=int)
+@click.option("--workspace", default=None, help="Workspace root. Defaults to cwd.")
+@click.option("--db", "db_path", default=None, type=click.Path(path_type=Path),
+              help="Profile suggestions DB path.")
+def profile_reject_cmd(
+    suggestion_id: int,
+    workspace: str | None,
+    db_path: Path | None,
+) -> None:
+    from sera.profile_learning import ProfileLearner
+
+    ws = workspace or os.getcwd()
+    learner = ProfileLearner(workspace=ws, db_path=db_path)
+    suggestion = learner.reject(suggestion_id)
+    console.print(
+        f"[yellow]rejected[/yellow] {suggestion.section_key}: {suggestion.item}"
+    )
+
+
+@profile_group.command(name="capture")
+@click.option("--workspace", default=None, help="Workspace root. Defaults to cwd.")
+@click.option("--db", "db_path", default=None, type=click.Path(path_type=Path),
+              help="Profile suggestions DB path.")
+@click.option("--session-id", required=True, help="Session to inspect for profile cues.")
+def profile_capture_cmd(
+    workspace: str | None,
+    db_path: Path | None,
+    session_id: str,
+) -> None:
+    import asyncio
+
+    from sera.memory.session import Session
+    from sera.profile_learning import ProfileLearner
+
+    ws = workspace or os.getcwd()
+    session = Session.load(session_id)
+    if session is None:
+        console.print(f"[red]No session {session_id}.[/red]")
+        sys.exit(2)
+    learner = ProfileLearner(workspace=ws, db_path=db_path)
+    suggestions = asyncio.run(learner.capture_session(session))
+    if not suggestions:
+        console.print("[dim]No profile suggestions detected.[/dim]")
+        return
+    console.print(f"[green]captured[/green] {len(suggestions)} suggestion(s)")
+
+
 @main.group(name="skills", invoke_without_command=True)
 @click.option("--root", default=None, type=click.Path(path_type=Path),
-              help="Skills directory. Defaults to ~/.sera/skills.")
+              help="Skills directory. Defaults to ./skills when present, else ~/.sera/skills.")
 @click.option("--reload", "reload_flag", is_flag=True, default=False,
               help="Refresh tool registry against on-disk manifests.")
 @click.pass_context
@@ -180,7 +346,7 @@ def list_skills_cmd(ctx: click.Context, root: Path | None, reload_flag: bool) ->
         return
     from sera.skills.loader import discover_skills, get_default_registry
 
-    target = (root or SKILLS_DIR).resolve()
+    target = _resolve_skill_root(root)
     if not target.is_dir():
         console.print(f"[dim]No skills directory at {target}.[/dim]")
         return
@@ -332,7 +498,7 @@ def skills_commit_cmd(
     from sera.skills.git import commit_skill_change
 
     root = (ctx.parent.params if ctx.parent else {}).get("root")
-    target = (root or SKILLS_DIR).resolve()
+    target = _resolve_skill_root(root)
     info = commit_skill_change(target, skill_name, message, author=author)
     if info is None:
         console.print(f"[dim]{skill_name}: no changes to commit.[/dim]")
@@ -351,7 +517,7 @@ def skills_log_cmd(
     from sera.skills.git import skill_log
 
     root = (ctx.parent.params if ctx.parent else {}).get("root")
-    target = (root or SKILLS_DIR).resolve()
+    target = _resolve_skill_root(root)
     log = skill_log(target, skill_name, limit=limit)
     if not log:
         console.print(f"[dim]{skill_name}: no history (no commits).[/dim]")
@@ -382,7 +548,7 @@ def skills_diff_cmd(
     from sera.skills.git import skill_diff
 
     root = (ctx.parent.params if ctx.parent else {}).get("root")
-    target = (root or SKILLS_DIR).resolve()
+    target = _resolve_skill_root(root)
     diff = skill_diff(target, skill_name, ref_a=ref_a, ref_b=ref_b)
     if not diff:
         console.print(f"[dim]{skill_name}: no diff to show.[/dim]")
@@ -457,6 +623,131 @@ def skills_ab_cmd(
     console.print(f"[dim]reason: {verdict.reason}[/dim]")
 
 
+@list_skills_cmd.command(name="scaffold")
+@click.argument("skill_name")
+@click.option("--trigger", default=None, help="Slash trigger. Defaults to /<skill-name>.")
+@click.option("--description", default="", help="One-line description.")
+@click.option("--permission", default="READ_ONLY", help="Permission tier.")
+@click.option("--force", is_flag=True, default=False, help="Overwrite an existing scaffold.")
+@click.pass_context
+def skills_scaffold_cmd(
+    ctx: click.Context,
+    skill_name: str,
+    trigger: str | None,
+    description: str,
+    permission: str,
+    force: bool,
+) -> None:
+    """Create a structured skill package with SKILL.md and replay.yaml."""
+    from sera.skills.scaffold import scaffold_skill
+
+    root = (ctx.parent.params if ctx.parent else {}).get("root")
+    target = _resolve_skill_root(root)
+    result = scaffold_skill(
+        target,
+        name=skill_name,
+        trigger=trigger,
+        description=description,
+        permission=permission,
+        force=force,
+    )
+    console.print(f"[green]scaffolded[/green] {result.skill_dir}")
+
+
+@list_skills_cmd.group(name="workshop")
+def skills_workshop_group() -> None:
+    """Reviewable skill proposals captured from reusable workflows."""
+
+
+@skills_workshop_group.command(name="pending")
+@click.option("--workspace", default=None, help="Workspace root. Defaults to cwd.")
+def skills_workshop_pending_cmd(workspace: str | None) -> None:
+    from sera.skills.workshop import SkillWorkshop
+
+    ws = workspace or os.getcwd()
+    workshop = SkillWorkshop(workspace=ws)
+    proposals = workshop.pending()
+    if not proposals:
+        console.print("[dim]No pending workshop proposals.[/dim]")
+        return
+    table = Table(title=f"Workshop proposals — {Path(ws).name}")
+    table.add_column("id", style="bold")
+    table.add_column("status")
+    table.add_column("skill")
+    table.add_column("risk")
+    table.add_column("title", overflow="fold")
+    for p in proposals:
+        table.add_row(str(p.id), p.status, p.skill_name, p.risk_level, p.title)
+    console.print(table)
+
+
+@skills_workshop_group.command(name="suggest")
+@click.option("--workspace", default=None, help="Workspace root. Defaults to cwd.")
+@click.option("--skill-name", required=True, help="Target skill slug or name.")
+@click.option("--title", required=True, help="Short proposal title.")
+@click.option("--reason", required=True, help="Why this should become a skill.")
+@click.option("--description", default="", help="One-line skill description.")
+@click.option("--body", default="", help="Markdown skill body.")
+def skills_workshop_suggest_cmd(
+    workspace: str | None,
+    skill_name: str,
+    title: str,
+    reason: str,
+    description: str,
+    body: str,
+) -> None:
+    from sera.skills.workshop import SkillWorkshop
+
+    ws = workspace or os.getcwd()
+    workshop = SkillWorkshop(workspace=ws)
+    proposal = workshop.suggest(
+        skill_name=skill_name,
+        title=title,
+        reason=reason,
+        description=description or f"Reusable workflow for {skill_name}.",
+        body=body or "Use this workflow when the same request comes back.",
+    )
+    console.print(
+        f"[green]proposal {proposal.id}[/green] "
+        f"{proposal.skill_name} [{proposal.status}]"
+    )
+
+
+@skills_workshop_group.command(name="apply")
+@click.argument("proposal_id", type=int)
+@click.option("--workspace", default=None, help="Workspace root. Defaults to cwd.")
+@click.option("--force", is_flag=True, default=False, help="Overwrite an existing skill directory.")
+def skills_workshop_apply_cmd(
+    proposal_id: int,
+    workspace: str | None,
+    force: bool,
+) -> None:
+    import asyncio
+
+    from sera.skills.workshop import SkillWorkshop
+
+    ws = workspace or os.getcwd()
+    workshop = SkillWorkshop(workspace=ws)
+    applied = asyncio.run(workshop.apply(proposal_id, force=force))
+    status = "verified" if applied.verified else "candidate"
+    console.print(
+        f"[green]applied[/green] {applied.proposal.skill_name} "
+        f"→ {applied.scaffold.skill_dir} [{status}]"
+    )
+
+
+@skills_workshop_group.command(name="reject")
+@click.argument("proposal_id", type=int)
+@click.option("--workspace", default=None, help="Workspace root. Defaults to cwd.")
+def skills_workshop_reject_cmd(proposal_id: int, workspace: str | None) -> None:
+    from sera.skills.workshop import SkillWorkshop
+
+    ws = workspace or os.getcwd()
+    workshop = SkillWorkshop(workspace=ws)
+    proposal = workshop.reject(proposal_id)
+    console.print(f"[yellow]rejected[/yellow] proposal {proposal.id} ({proposal.skill_name})")
+
+
 @list_skills_cmd.command(name="export")
 @click.argument("name")
 @click.option("--out", "out_path", default=None, type=click.Path(path_type=Path),
@@ -468,7 +759,7 @@ def skills_export_cmd(name: str, out_path: Path | None, key_file: Path | None) -
     from sera.skills.pack import PackError, pack_skill
 
     ctx = click.get_current_context()
-    root = (ctx.parent.params if ctx.parent else {}).get("root")
+    root = _resolve_skill_root((ctx.parent.params if ctx.parent else {}).get("root"))
     dest = out_path or Path(f"{name}.skillpack")
     private_key_pem: bytes | None = None
     if key_file is not None:
@@ -492,7 +783,7 @@ def skills_import_cmd(pack_path: Path, key_file: Path | None) -> None:
     from sera.skills.pack import PackError, unpack_skill
 
     ctx = click.get_current_context()
-    root = (ctx.parent.params if ctx.parent else {}).get("root")
+    root = _resolve_skill_root((ctx.parent.params if ctx.parent else {}).get("root"))
     public_key_pem: bytes | None = None
     if key_file is not None:
         public_key_pem = Path(key_file).read_bytes()
@@ -806,7 +1097,7 @@ def council_run_cmd(question: str, models: str | None, dry_run: bool) -> None:
 
         def stub_factory(model_id: str):
             async def call(prompt: str) -> str:
-                return "[stub answer from council member]"
+                return "(stub answer from council member)"
             return call
         factory = stub_factory
     else:
@@ -1074,6 +1365,28 @@ def serve(host: str, port: int, supervised: bool) -> None:
 
 
 @main.command()
+@click.option("--host", default="127.0.0.1", help="Bind host (0.0.0.0 to expose on LAN).")
+@click.option("--port", default=8787, type=int, help="Bind port.")
+def relay(host: str, port: int) -> None:
+    """Run the CRDT memory relay — real-time sync across your devices (P-91).
+
+    Point each device's Sera at this relay; chunks/entities/relations written
+    on one converge on the others in well under a second. The relay is a dumb
+    broadcast hub — no truth lives here, so killing it loses nothing.
+    """
+    import asyncio
+
+    from sera.sync.relay import serve_forever
+
+    console.print(f"[bold green]Sera CRDT relay[/bold green] on ws://{host}:{port}")
+    console.print("[dim]Ctrl+C to stop. Devices converge deterministically.[/dim]")
+    try:
+        asyncio.run(serve_forever(host=host, port=port))
+    except KeyboardInterrupt:
+        console.print("[dim]relay stopped[/dim]")
+
+
+@main.command()
 @click.option("--profile", default=None, help="LLM profile (reasoning|fast).")
 @click.option("--workspace", default=None, help="Workspace root for tools.")
 @click.option("--session-id", default=None, help="Resume an existing session id.")
@@ -1112,6 +1425,14 @@ def chat(profile: str | None, workspace: str | None, session_id: str | None) -> 
         console.print(f"[red]Failed to init LLM: {e}[/red]")
         sys.exit(1)
 
+    from sera.skills.loader import get_default_registry
+    from sera.skills.workshop import SkillWorkshop
+    from sera.profile_learning import ProfileLearner
+
+    get_default_registry(workspace_skills_dir(ws)).refresh()
+    workshop = SkillWorkshop.from_config(cfg, workspace=ws)
+    profile_learner = ProfileLearner(workspace=ws)
+
     # Approval threshold: prompt when a tool's effective tier is AT or ABOVE the floor.
     # Config key `approval_required_at_or_above` is canonical; `approval_required_above`
     # is the legacy alias (P-03 / P-04) — kept for back-compat with shipped configs.
@@ -1144,7 +1465,19 @@ def chat(profile: str | None, workspace: str | None, session_id: str | None) -> 
     approval = CliApprovalGate()
     sink = _make_sink()
 
-    asyncio.run(_repl(session, llm, sink, approval, threshold, max_iters, cost_enforcer))
+    asyncio.run(
+        _repl(
+            session,
+            llm,
+            sink,
+            approval,
+            threshold,
+            max_iters,
+            cost_enforcer,
+            workshop,
+            profile_learner,
+        )
+    )
 
 
 def _make_sink() -> TokenSink:
@@ -1186,7 +1519,17 @@ def _shorten_args(args: dict) -> str:
     return out[:80] + ("…" if len(out) > 80 else "")
 
 
-async def _repl(session, llm, sink, approval, threshold, max_iters, cost_enforcer=None) -> None:
+async def _repl(
+    session,
+    llm,
+    sink,
+    approval,
+    threshold,
+    max_iters,
+    cost_enforcer=None,
+    workshop=None,
+    profile_learner=None,
+) -> None:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.patch_stdout import patch_stdout
     from sera.llm.budget import BudgetExceeded
@@ -1238,6 +1581,8 @@ async def _repl(session, llm, sink, approval, threshold, max_iters, cost_enforce
                     budget=budget,
                     interrupt=token,
                     cost_enforcer=cost_enforcer,
+                    workshop=workshop,
+                    profile_learner=profile_learner,
                 )
         except BudgetExceeded as e:
             console.print(f"\n[red bold]💸 {e}[/red bold]")
@@ -1248,7 +1593,7 @@ async def _repl(session, llm, sink, approval, threshold, max_iters, cost_enforce
             console.print("\n[dim]bye.[/dim]")
             return
         except Exception as e:  # noqa: BLE001 — show error and continue REPL
-            console.print(f"\n[red]Turn failed: {type(e).__name__}: {e}[/red]")
+            console.print(f"\n[red]Turn failed: {type(e).__name__}: {redact(str(e))}[/red]")
 
 
 # ---------------------------------------------------------------------------

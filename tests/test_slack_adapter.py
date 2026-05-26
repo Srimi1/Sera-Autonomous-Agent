@@ -8,19 +8,16 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
 from typing import Any
 
-import pytest
 
 from sera.gateway.platforms.slack import (
-    SlackSendResult,
     SlackSender,
     SlackSessionStore,
     _approval_blocks,
     parse_slack,
 )
-from sera.gateway.router import InboundEvent, OutboundResponse
+from sera.gateway.router import OutboundResponse
 
 
 # ---------------------------------------------------------------------------

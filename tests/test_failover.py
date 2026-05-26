@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 
 import pytest
 
 from sera.llm.base import ContextOverflow, StreamChunk
 from sera.llm.failover import (
     FailoverChain,
-    FailoverEvent,
     FailoverReason,
     classify,
 )

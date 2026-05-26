@@ -162,7 +162,9 @@ class RedAgent:
     ) -> RedRun:
         """Plant `n` payloads across provided structures. Returns run report."""
         result = RedRun()
-        targets = []
+        # Second element is heterogeneous by design: the whole messages list for
+        # tool_result, but a single skill/chunk dict otherwise. `loc` gates which.
+        targets: list[tuple[str, Any]] = []
         if messages is not None:
             targets.append(("tool_result", messages))
         if skills is not None:

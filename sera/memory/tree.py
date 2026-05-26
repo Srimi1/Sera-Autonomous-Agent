@@ -23,7 +23,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator, Sequence
+from typing import Iterable, Iterator, Sequence, cast
 
 import numpy as np
 
@@ -390,7 +390,7 @@ class MemoryTree:
                 (chunk_id, blob),
             )
         self.conn.commit()
-        return int(chunk_id)
+        return cast(int, chunk_id)  # lastrowid is always set after INSERT
 
     def update_chunk(
         self,
@@ -756,7 +756,7 @@ class MemoryTree:
             (name, type, now, now),
         )
         self.conn.commit()
-        return int(cur.lastrowid)
+        return cast(int, cur.lastrowid)  # lastrowid is always set after INSERT
 
     def get_entity(self, entity_id: int) -> Entity | None:
         row = self.conn.execute(
@@ -814,7 +814,7 @@ class MemoryTree:
             (src_id, dst_id, kind, float(confidence), provenance_chunk_id, now),
         )
         self.conn.commit()
-        return int(cur.lastrowid)
+        return cast(int, cur.lastrowid)  # lastrowid is always set after INSERT
 
     def relations_for(self, entity_name: str) -> list[Relation]:
         """All outgoing edges from a named entity."""

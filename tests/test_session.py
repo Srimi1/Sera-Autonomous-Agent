@@ -1,7 +1,6 @@
 """SQLite session + FTS5 round-trip."""
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 from sera.memory.session import Message, Session

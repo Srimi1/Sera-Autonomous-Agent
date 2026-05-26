@@ -330,6 +330,10 @@ class Session:
         self.messages: list[Message] = []
         self._db_path = db_path
         self._conn: sqlite3.Connection | None = None
+        # Transient (not persisted): USD cost of the most recent run_turn.
+        # Stamped by run_turn so callers (e.g. the gateway Router) can feed
+        # actual cost into the bandit reward signal instead of assuming 0.
+        self.last_turn_cost_usd: float = 0.0
 
     @property
     def conn(self) -> sqlite3.Connection:

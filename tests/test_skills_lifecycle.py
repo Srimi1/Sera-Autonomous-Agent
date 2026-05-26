@@ -6,8 +6,6 @@ from pathlib import Path
 import pytest
 
 from sera.skills.lifecycle import (
-    ARCHIVE_AFTER_SECONDS,
-    STALE_AFTER_SECONDS,
     LifecycleState,
     SkillLifecycle,
 )

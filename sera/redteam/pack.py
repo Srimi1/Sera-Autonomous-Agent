@@ -36,7 +36,10 @@ from typing import Any
 
 try:
     from cryptography.exceptions import InvalidSignature
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PrivateKey,
+        Ed25519PublicKey,
+    )
     from cryptography.hazmat.primitives.serialization import (
         Encoding,
         NoEncryption,
@@ -241,6 +244,8 @@ def _sign(data: bytes, private_key_pem: bytes) -> bytes:
     if not _CRYPTO:
         raise ImportError("pip install cryptography to sign redpacks")
     priv = load_pem_private_key(private_key_pem, password=None)
+    if not isinstance(priv, Ed25519PrivateKey):
+        raise RedPackError("redpack signing requires an Ed25519 private key")
     return priv.sign(data)
 
 
@@ -249,6 +254,8 @@ def _verify(data: bytes, sig: bytes, public_key_pem: bytes) -> None:
         raise ImportError("pip install cryptography to verify redpacks")
     try:
         pub = load_pem_public_key(public_key_pem)
+        if not isinstance(pub, Ed25519PublicKey):
+            raise RedPackError("redpack signatures require an Ed25519 public key")
         pub.verify(sig, data)
     except InvalidSignature as e:
         raise RedPackError("signature verification failed") from e

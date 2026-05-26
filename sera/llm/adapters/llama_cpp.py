@@ -26,7 +26,6 @@ Uses the same _build_chatml_prompt helper as the MLX adapter.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import sys
 from pathlib import Path

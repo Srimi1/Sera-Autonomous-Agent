@@ -17,7 +17,7 @@ from typing import AsyncIterator
 
 import pytest
 
-from sera.gateway.router import InboundEvent, Router
+from sera.gateway.router import Router
 from sera.llm.base import StreamChunk
 from sera.rpc.http_api import (
     SeraHTTPAPI,

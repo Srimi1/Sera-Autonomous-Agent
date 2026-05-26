@@ -17,6 +17,7 @@ from sera.context.tokens import estimate_messages
 from sera.llm.base import LLM, ContextOverflow
 from sera.llm.cache import freeze_system_prompt
 from sera.memory.session import Message, Session
+from sera.profile import build_profile_prompt
 from sera.safety.approval import ApprovalGate, AutoApproveGate
 from sera.safety.redact import redact
 from sera.skills.manifest import CouncilConfig, council_skill_dispatch
@@ -155,6 +156,8 @@ async def run_turn(
     council_config: CouncilConfig | None = None,
     cost_enforcer: BudgetEnforcer | None = None,
     distill_cache: DistillCache | None = None,
+    workshop: object | None = None,
+    profile_learner: object | None = None,
 ) -> str:
     """Run one full agent turn.
 
@@ -173,7 +176,11 @@ async def run_turn(
 
     # Freeze the system prompt on first turn; on resume, restore the frozen
     # prompt verbatim so Anthropic's prompt cache keeps hitting.
-    frozen_prompt = freeze_system_prompt(session, system_prompt)
+    profile_prompt = build_profile_prompt(session.workspace)
+    combined_prompt = system_prompt
+    if profile_prompt:
+        combined_prompt = f"{system_prompt}\n\n{profile_prompt}"
+    frozen_prompt = freeze_system_prompt(session, combined_prompt)
 
     session.append(Message(role="user", content=user_msg))
 
@@ -194,6 +201,7 @@ async def run_turn(
                 sink.on_text(_cached)
                 sink.on_text("\n")
                 _distill_hit = True
+                session.last_turn_cost_usd = 0.0  # cache hit — no LLM call
                 return _cached
         except Exception:
             pass
@@ -394,4 +402,21 @@ async def run_turn(
         except Exception:
             pass
 
+    if workshop is not None:
+        capture = getattr(workshop, "capture_session", None)
+        if capture is not None:
+            try:
+                await capture(session)
+            except Exception:
+                pass
+
+    if profile_learner is not None:
+        capture = getattr(profile_learner, "capture_session", None)
+        if capture is not None:
+            try:
+                await capture(session)
+            except Exception:
+                pass
+
+    session.last_turn_cost_usd = _turn_cost
     return final_text

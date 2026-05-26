@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from sera.eval.regress import PromotionResult, RegressionGate
+from sera.eval.regress import RegressionGate
 
 
 # ---------------------------------------------------------------------------

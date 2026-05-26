@@ -11,11 +11,9 @@ import yaml
 
 from sera.plugins.manifest import (
     Capability,
-    LoadResult,
     ManifestError,
     PluginManifest,
     SignatureBlock,
-    ToolEntry,
     canonical_payload,
     load_manifest_dict,
     load_manifest_file,

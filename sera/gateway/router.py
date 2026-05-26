@@ -23,11 +23,13 @@ from typing import Any, Awaitable, Callable
 
 from sera.agent.budget import IterationBudget
 from sera.agent.loop import run_turn
+from sera.config import workspace_skills_dir
 from sera.llm.bandit import ThompsonBandit, reward_signal
 from sera.llm.base import LLM
 from sera.llm.budget import BudgetEnforcer, BudgetExceeded
 from sera.memory.session import Session
 from sera.safety.approval import AutoApproveGate
+from sera.skills.loader import get_default_registry
 from sera.skills.manifest import CouncilConfig
 
 log = logging.getLogger("sera.gateway.router")
@@ -104,6 +106,7 @@ class Router:
         on_response: Callable[[InboundEvent, "OutboundResponse"], Awaitable[None]] | None = None,
         session_resolver: Callable[[InboundEvent], Session] | None = None,
         workspace: str | None = None,
+        workshop: object | None = None,
     ) -> None:
         """
         Args:
@@ -139,6 +142,7 @@ class Router:
         self._on_response = on_response
         self._session_resolver = session_resolver
         self._workspace = workspace
+        self._workshop = workshop
         self._n_handled = 0
 
     @property
@@ -205,6 +209,8 @@ class Router:
         else:
             session = Session.create(workspace=ws)
 
+        get_default_registry(workspace_skills_dir(ws)).refresh()
+
         t0 = time.monotonic()
         budget = IterationBudget.of(self._max_iterations)
 
@@ -218,6 +224,7 @@ class Router:
                 budget=budget,
                 council_config=self._council_config,
                 cost_enforcer=self._cost_enforcer,
+                workshop=self._workshop,
             )
             latency_ms = int((time.monotonic() - t0) * 1000)
             success = True
@@ -235,12 +242,13 @@ class Router:
 
         # Post-turn bandit update — feed observed reward back into Beta priors.
         if self._bandit is not None and self._profiles:
-            # We don't have per-turn cost here (the loop tracks it internally).
-            # Use 0.0 for the cost gate — reward turns on success + latency only.
+            # run_turn stamps the turn's actual USD cost on the session, so the
+            # reward gate now turns on success + latency + cost (P-37 fully wired).
+            turn_cost = float(getattr(session, "last_turn_cost_usd", 0.0))
             reward = reward_signal(
                 success=success,
                 latency_ms=latency_ms,
-                cost_usd=0.0,
+                cost_usd=turn_cost,
                 latency_budget_ms=self._latency_budget_ms,
                 cost_budget_usd=self._cost_budget_usd,
             )

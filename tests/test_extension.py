@@ -7,9 +7,7 @@ import time
 import urllib.request
 import urllib.error
 from pathlib import Path
-from typing import Any
 
-import pytest
 
 EXTENSION_DIR = Path(__file__).parents[1] / "sera-extension"
 

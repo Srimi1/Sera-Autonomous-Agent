@@ -8,7 +8,6 @@ actually respawns an OS process; one test proves crash-only state survival.
 from __future__ import annotations
 
 import sys
-import time
 from pathlib import Path
 
 import pytest

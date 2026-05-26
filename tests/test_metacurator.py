@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from sera.curator.meta import MetaCurator, MetaCuratorResult, ThrottleReason
+from sera.curator.meta import MetaCurator
 
 
 def _curator(max_p: int = 5, window_s: float = 60.0) -> tuple[MetaCurator, list[float]]:

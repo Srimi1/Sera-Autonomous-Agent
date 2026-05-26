@@ -9,10 +9,11 @@ import json
 import logging
 from typing import TYPE_CHECKING, Protocol
 
-from sera.tools.base import ToolCall
-
 if TYPE_CHECKING:
+    # Type-only: ToolCall is referenced solely in annotations (PEP 563 strings),
+    # so this avoids a runtime safety→tools import — keeping safety a lower layer.
     from sera.safety.vault import EncryptedVault
+    from sera.tools.base import ToolCall
 
 log = logging.getLogger("sera.safety.approval")
 

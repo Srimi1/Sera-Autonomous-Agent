@@ -13,7 +13,6 @@ import pytest
 
 from sera.gateway.platforms.telegram import (
     DEFAULT_SESSION_TTL_S,
-    TelegramSendResult,
     TelegramSender,
     TelegramSessionStore,
     parse_telegram,

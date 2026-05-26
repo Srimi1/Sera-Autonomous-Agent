@@ -1,13 +1,12 @@
 """P-96: marketplace — signed artifact registry."""
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import pytest
 
-from sera.marketplace.registry import MarketplaceRegistry, PackEntry
-from sera.marketplace.client import MarketplaceClient, InstallResult, _infer_kind
+from sera.marketplace.registry import MarketplaceRegistry
+from sera.marketplace.client import MarketplaceClient, _infer_kind
 
 
 # ---------------------------------------------------------------------------
@@ -103,8 +102,8 @@ def test_list_installed_returns_only_installed(tmp_path: Path):
 
 def test_pubkey_pem_stored_and_retrieved(tmp_path: Path):
     reg = _reg(tmp_path)
-    e = reg.publish(name="signed", kind="skillpack", path="/tmp/s.skillpack",
-                    pubkey_pem="-----BEGIN PUBLIC KEY-----\nABC\n-----END PUBLIC KEY-----\n")
+    reg.publish(name="signed", kind="skillpack", path="/tmp/s.skillpack",
+                pubkey_pem="-----BEGIN PUBLIC KEY-----\nABC\n-----END PUBLIC KEY-----\n")
     loaded = reg.get_by_name("signed")
     assert "BEGIN PUBLIC KEY" in loaded.pubkey_pem
     reg.close()

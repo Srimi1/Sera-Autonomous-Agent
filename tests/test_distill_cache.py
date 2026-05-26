@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from sera.llm.distill_cache import CacheStats, DistillCache, compute_key
+from sera.llm.distill_cache import DistillCache, compute_key
 
 
 # ---------------------------------------------------------------------------

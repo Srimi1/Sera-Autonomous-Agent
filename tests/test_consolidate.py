@@ -7,11 +7,9 @@ from __future__ import annotations
 import asyncio
 import json
 
-import pytest
 
 from sera.dream.consolidate import (
     ConsolidationEngine,
-    ConsolidationResult,
     Contradiction,
     _build_reconciliation_prompt,
 )

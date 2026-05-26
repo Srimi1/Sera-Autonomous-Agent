@@ -13,6 +13,7 @@ SESSIONS_DB = SERA_HOME / "sessions.db"
 MEMORY_DB = SERA_HOME / "memory.db"
 SKILLS_DIR = SERA_HOME / "skills"
 VAULT_DIR = SERA_HOME / "vault"
+WORKSPACE_SKILLS_DIRNAME = "skills"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "identity": {"name": "", "timezone": "Etc/UTC"},
@@ -41,6 +42,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # skill_limits: {"task_kind": [soft_usd, hard_usd]}
         "skill_limits": {},
     },
+    "skills": {
+        "workshop": {
+            "auto_capture": True,
+            "approval_policy": "pending",
+            "review_mode": "heuristic",
+        },
+    },
 }
 
 
@@ -48,6 +56,10 @@ def ensure_home() -> None:
     SERA_HOME.mkdir(parents=True, exist_ok=True)
     SKILLS_DIR.mkdir(exist_ok=True)
     VAULT_DIR.mkdir(exist_ok=True)
+
+
+def workspace_skills_dir(workspace: str | Path) -> Path:
+    return Path(workspace).expanduser().resolve() / WORKSPACE_SKILLS_DIRNAME
 
 
 def load() -> dict[str, Any]:

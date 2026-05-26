@@ -2,10 +2,7 @@
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 
-import pytest
 
 from sera.notifications import (
     NotificationEvent,
@@ -13,7 +10,6 @@ from sera.notifications import (
     _fire_linux,
     _fire_macos,
     _fire_windows,
-    _tray_state_path,
     _write_tray_state,
     fire,
     notify_consolidation,

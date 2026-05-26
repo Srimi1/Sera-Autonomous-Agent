@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 
 from sera.sandbox.base import SandboxResult, SandboxTier
 from sera.sandbox.local import LocalSubprocessSandbox, _scan_network_imports
@@ -230,8 +229,10 @@ class TestPicker:
 
 class TestPythonEvalTool:
     def setup_method(self) -> None:
-        # Ensure the tool is registered
-        import sera.tools.impl.python_eval  # noqa: F401
+        # Ensure the tool is registered (side-effect import via importlib so
+        # pyflakes doesn't flag an unused binding — it ignores `# noqa`).
+        import importlib
+        importlib.import_module("sera.tools.impl.python_eval")
 
     def _ctx(self) -> ToolContext:
         return ToolContext(session_id="t", workspace="/tmp")

@@ -128,8 +128,10 @@ def _chaos_concurrent_writes(db_path: Path, seed: int) -> ChaosResult:
     rng = random.Random(seed)
     t1 = threading.Thread(target=_write, args=(rng.randint(2, 5),))
     t2 = threading.Thread(target=_write, args=(rng.randint(2, 5),))
-    t1.start(); t2.start()
-    t1.join(timeout=10); t2.join(timeout=10)
+    t1.start()
+    t2.start()
+    t1.join(timeout=10)
+    t2.join(timeout=10)
 
     survived = not errors
     return ChaosResult(

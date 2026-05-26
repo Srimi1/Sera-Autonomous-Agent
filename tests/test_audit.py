@@ -4,9 +4,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
-from sera.safety.audit import AuditLog, AuditEntry, _entry_hash, _GENESIS_HASH
+from sera.safety.audit import AuditLog, _entry_hash, _GENESIS_HASH
 
 
 def _log(tmp_path: Path) -> AuditLog:

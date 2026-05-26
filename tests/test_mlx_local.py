@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -206,10 +205,7 @@ class TestRouterIntegration:
 class TestZeroAPICallVerification:
     def test_mlx_local_records_zero_cost(self, tmp_path: Path) -> None:
         """Phase gate: mlx_local turn → router_stats cost_usd=0.0, provider=mlx_local."""
-        import time
-
         db = tmp_path / "stats.db"
-        t_before = time.time()
 
         record_call(
             provider="mlx_local",

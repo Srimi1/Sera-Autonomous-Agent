@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from sera.skills.ab import ABResult, Verdict, compute_verdict
+from sera.skills.ab import ABResult, compute_verdict
 from sera.skills.lifecycle import SkillLifecycle
 
 

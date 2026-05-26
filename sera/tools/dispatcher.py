@@ -14,6 +14,7 @@ import asyncio
 import logging
 import time
 import traceback
+from typing import Any, Callable, cast
 
 from sera.safety.redact import redact
 from sera.tools.base import ToolCall, ToolContext, ToolResult
@@ -33,7 +34,9 @@ async def execute(call: ToolCall, ctx: ToolContext) -> ToolResult:
         if asyncio.iscoroutinefunction(tool.handler):
             content = await tool.handler(call.arguments, ctx)
         else:
-            content = await asyncio.to_thread(tool.handler, call.arguments, ctx)
+            # Reached only for sync handlers; ToolHandler is typed async, so cast.
+            sync_handler = cast(Callable[[dict[str, Any], ToolContext], str], tool.handler)
+            content = await asyncio.to_thread(sync_handler, call.arguments, ctx)
         result = ToolResult(call.id, call.name, str(content))
     except Exception as e:  # noqa: BLE001 — surface tool errors as results
         log.warning("tool %s failed", call.name, exc_info=True)

@@ -6,12 +6,10 @@ import threading
 import time
 from pathlib import Path
 
-import pytest
 
 from sera.memory.session import (
     Message,
     Session,
-    _recover_aborted,
     recover_aborted_sessions,
     session_lock,
 )

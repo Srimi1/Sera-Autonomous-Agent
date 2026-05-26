@@ -27,7 +27,7 @@ import urllib.request
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Generator
+from typing import Any, Callable, Generator
 
 from sera.config import SERA_HOME
 from sera.gateway.router import InboundEvent, OutboundResponse

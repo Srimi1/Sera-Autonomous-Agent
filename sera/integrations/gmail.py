@@ -51,7 +51,7 @@ class GmailScanner:
 
         for entry in listings[:max_messages]:
             try:
-                msg_id = entry.get("id") if isinstance(entry, dict) else str(entry)
+                msg_id = str(entry.get("id") or "") if isinstance(entry, dict) else str(entry)
                 m = client.get_message(msg_id)
                 if not isinstance(m, dict):
                     continue

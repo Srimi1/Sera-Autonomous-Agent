@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 import asyncio
-import math
 import sqlite3
 from pathlib import Path
 
 import pytest
 
 from sera.memory.embedder import StubEmbedder
-from sera.memory.search import HybridWeights, hybrid_search
+from sera.memory.search import hybrid_search
 from sera.memory.tree import (
     FRESHNESS_EWMA_ALPHA,
     FRESHNESS_HALF_LIFE_SECONDS,

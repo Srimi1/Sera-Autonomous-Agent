@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import pytest
 
 from sera.tools.genesis import (
     GenesisResult,
@@ -236,7 +235,7 @@ class TestGenesisPipeline:
     def test_skip_dry_run_flag(self, tmp_path: Path) -> None:
         """skip_dry_run lets a broken-import file persist (testing hatch)."""
         spec = _echo_spec("skipped_dryrun")
-        result = _run(genesis(
+        _run(genesis(
             spec, auto_dir=tmp_path, skip_mypy=True, skip_dry_run=True,
         ))
         # File written; pipeline continues to live-import which loads it cleanly

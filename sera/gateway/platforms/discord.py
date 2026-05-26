@@ -46,6 +46,108 @@ _CHANNEL_THREADS = {10, 11, 12}  # ANNOUNCEMENT_THREAD, PUBLIC_THREAD, PRIVATE_T
 
 
 # ---------------------------------------------------------------------------
+# Ed25519 signature verification — Discord Interactions Endpoint requirement
+# ---------------------------------------------------------------------------
+#
+# Discord signs every interaction webhook with Ed25519 and REJECTS your app at
+# registration time unless you verify it. The signed message is the timestamp
+# header concatenated with the raw request body; the signature is hex in
+# `X-Signature-Ed25519`, the timestamp is `X-Signature-Timestamp`, and the
+# public key is the application's hex public key from the Developer Portal.
+#
+# Production blocker before this: P-53 shipped the parser + sender but no
+# verification, so a real Discord app would 401 on its first PING.
+
+SIG_HEADER = "X-Signature-Ed25519"
+TS_HEADER = "X-Signature-Timestamp"
+DEFAULT_MAX_SIGNATURE_AGE_S: int = 300  # reject timestamps older than 5 min (replay guard)
+
+
+def verify_discord_signature(
+    public_key_hex: str,
+    signature_hex: str,
+    timestamp: str,
+    body: bytes,
+    *,
+    max_age_s: int | None = DEFAULT_MAX_SIGNATURE_AGE_S,
+    clock: Callable[[], float] = time.time,
+) -> bool:
+    """Return True iff `body` carries a valid, fresh Discord Ed25519 signature.
+
+    The verified message is exactly `timestamp + body` (Discord's contract).
+    A stale timestamp (older than max_age_s) is rejected even if the signature
+    is cryptographically valid — that blocks captured-request replay. Pass
+    max_age_s=None to skip the freshness check (e.g. verifying recorded fixtures).
+    """
+    if not public_key_hex or not signature_hex or not timestamp:
+        return False
+
+    if max_age_s is not None:
+        try:
+            ts = float(timestamp)
+        except (TypeError, ValueError):
+            return False
+        if abs(clock() - ts) > max_age_s:
+            log.warning("discord: rejecting signature with stale timestamp (age guard)")
+            return False
+
+    try:
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+        pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key_hex))
+        message = timestamp.encode("utf-8") + body
+        pub.verify(bytes.fromhex(signature_hex), message)
+        return True
+    except (InvalidSignature, ValueError):
+        return False
+    except Exception as exc:  # noqa: BLE001 — never let a verifier crash the server
+        log.error("discord: signature verification error: %s", exc)
+        return False
+
+
+@dataclass
+class DiscordSignatureVerifier:
+    """Server-pluggable verifier: (headers, body) → bool.
+
+    Wire into GatewayServer(verifiers={"discord": DiscordSignatureVerifier(pubkey)}).
+    Reads Discord's signature/timestamp headers case-insensitively and delegates
+    to verify_discord_signature.
+    """
+
+    public_key_hex: str
+    max_age_s: int | None = DEFAULT_MAX_SIGNATURE_AGE_S
+    clock: Callable[[], float] = time.time
+
+    def __call__(self, headers: Any, body: bytes) -> bool:
+        signature = _header(headers, SIG_HEADER)
+        timestamp = _header(headers, TS_HEADER)
+        if not signature or not timestamp:
+            return False
+        return verify_discord_signature(
+            self.public_key_hex, signature, timestamp, body,
+            max_age_s=self.max_age_s, clock=self.clock,
+        )
+
+
+def _header(headers: Any, name: str) -> str | None:
+    """Read a header case-insensitively from a dict or an http.client message."""
+    getter = getattr(headers, "get", None)
+    if getter is not None:
+        val = getter(name)
+        if val is not None:
+            return val
+    lname = name.lower()
+    try:
+        for k, v in dict(headers).items():
+            if str(k).lower() == lname:
+                return v
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Parser — unifies slash + DM + thread + channel
 # ---------------------------------------------------------------------------
 
@@ -113,7 +215,8 @@ def parse_discord(payload: dict[str, Any]) -> InboundEvent | None:
     # ─── Plain message (MESSAGE_CREATE shape) ─────────────────────────────
     # Real Discord gateway sends {"t":"MESSAGE_CREATE","d":{...}}.
     # Bots-on-webhook clients (and our tests) often pass the inner `d` directly.
-    msg = payload.get("d") if isinstance(payload.get("d"), dict) else payload
+    _inner = payload.get("d")
+    msg: dict[str, Any] = _inner if isinstance(_inner, dict) else payload
 
     # Discord uses `content` for the message body
     content = msg.get("content")
